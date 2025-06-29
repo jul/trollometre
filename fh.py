@@ -1,5 +1,9 @@
+#!/usr/bin/env python
+#basé sur https://gist.github.com/stuartlangridge/20ffe860fee0ecc315d3878c1ea77c35
+
 import json
 import os
+import sys
 from atproto_client.models import get_or_create
 from atproto import CAR, models, Client, client_utils
 import requests
@@ -11,8 +15,7 @@ from json import load, dumps
 cfg = load(open(os.path.expanduser("~/.bluesky.json")))
 handle = cfg["handle"]
 password= cfg["password"]
-
-
+def dbg(msg): sys.stderr.write(repr(msg));sys.stderr.flush()
 
 counter = mdict()
 seen = set([])
@@ -36,21 +39,7 @@ client = FirehoseSubscribeReposClient()
 
 bsc = Client()
 bsc.login(handle, password)
-from pdb import set_trace;set_trace()
 import re
-def parse_url(text: str) :
-    spans = []
-    # partial/naive URL regex based on: https://stackoverflow.com/a/3809435
-    # tweaked to disallow some training punctuation
-    url_regex = rb"[$|\W](https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*[-a-zA-Z0-9@%_\+~#//=])?)"
-    text_bytes = text.encode("UTF-8")
-    for m in re.finditer(url_regex, text_bytes):
-        spans.append({
-            "start": m.start(1),
-            "end": m.end(1),
-            "url": m.group(1).decode("UTF-8"),
-        })
-    return spans
 
 def get_root_refs(parent_uri: str, text : str) :
     global bsc
@@ -93,7 +82,6 @@ def send_post(payload):
             collection = "app.bsky.feed.post",
             record = payload )
     )
-    print(json.dumps(resp.json(), indent=2))
     resp.raise_for_status()
 
 
@@ -101,6 +89,8 @@ def send_post(payload):
 # https://github.com/MarshalX/atproto/blob/main/examples/firehose/sub_repos.py
 # and
 # https://github.com/MarshalX/bluesky-feed-generator/blob/main/server/data_stream.py
+class SpamError(Exception):
+    pass
 
 def on_message_handler(message):
     commit = parse_subscribe_repos_message(message)
@@ -110,20 +100,18 @@ def on_message_handler(message):
     car = CAR.from_bytes(commit.blocks)
     for op in commit.ops:
         if op.action in ["create"] and op.cid:
-            
-            
             raw = car.blocks.get(op.cid)
             cooked = get_or_create(raw, strict=False)
             if cooked and cooked.py_type == "app.bsky.feed.post":
-                # other types include "app.bsky.feed.like" etc which we ignore
-                # note that this data does not include who posted this skeet
-                # or possibly it does as a "CID" which you have to look up somehow
-                # who the hell knows? not me
+                toprint=""
                 try:
-                    if "fr" in raw["langs"]:
-                        #print(dumps(raw,indent=2, cls=JSONExtra))
-                        #print(json.dumps(raw, cls=JSONExtra, indent=2))
+                    if { "fr", } & set(raw["langs"]):
                         uri = raw["reply"]["root"]["uri"]
+                        toprint = raw = bsc.get_posts([uri])
+                        raw = raw.posts[0]
+                        if "market" in raw["author"].handle:
+                            raise SpamError(f"market in {raw['author'].handle}")
+
                         _,_,did,collection,rkey = uri.split("/")
                         url = f"https://bsky.app/profile/{did}/post/{rkey}"
                         at[url] = uri
@@ -131,22 +119,36 @@ def on_message_handler(message):
                         if url not in evicted:
                             counter += mdict({ url : 1 })
                 
+                except IndexError:
+                    dbg(toprint)
+                    pass
+
                 except KeyError:
                     pass
+                except SpamError as e:
+                    dbg(e)
                 if i> 200:
                     i=0
                     for p in sorted({ k:v for k, v in counter.items() if k not in evicted }.items(),
-                        key=lambda x : x[1] )[::-1][0:2]:
-                        print(p)
-                        print(p[0].split("/")[-1])
-                        raw = bsc.get_posts([at[p[0]]]).posts[0]
-                       
-                        send_post(get_root_refs(at[p[0]], f"seen here trolllevel : {p[1]}"))
-
-                        evicted |= {p[0],}
+                        key=lambda x : x[1] )[::-1][0:1]:
+                        dbg(p)
+                        dbg(p[0].split("/")[-1])
+                        if p[1]>25:
+                            try:
+                                raw = bsc.get_posts([at[p[0]]])
+                                dbg(raw)
+                                send_post(get_root_refs(at[p[0]], f"[BOT] le niveau d'agitation ici est de : {p[1]}"))
+                            except KeyError:
+                                dbg("invalid post")
+                                dbg(raw)
+                            finally:
+                                evicted |= {p[0],}
 
                         
 
-             
-client.start(on_message_handler)
+while [ 1 ]:             
+    try:
+        client.start(on_message_handler)
+    except:
+        pass
 
