@@ -108,7 +108,7 @@ def on_message_handler(message):
                     if { "fr", } & set(raw["langs"]):
                         uri = raw["reply"]["root"]["uri"]
                         toprint = raw = bsc.get_posts([uri])
-                        raw = raw.posts[0]
+                        post = raw = raw.posts[0]
                         if "market" in raw["author"].handle:
                             raise SpamError(f"market in {raw['author'].handle}")
 
@@ -116,8 +116,13 @@ def on_message_handler(message):
                         url = f"https://bsky.app/profile/{did}/post/{rkey}"
                         at[url] = uri
                         i+=1
-                        if url not in evicted:
-                            counter += mdict({ url : 1 })
+                        #from pdb import set_trace;set_trace()
+                        if set(post.record.langs) & {'fr',}:
+                            sys.stderr.write(".")
+                            sys.stderr.flush()
+                            if url not in evicted:
+
+                                counter[url] = post.like_count+post.repost_count+post.quote_count+post.reply_count
                 
                 except IndexError:
                     dbg(toprint)
@@ -125,8 +130,9 @@ def on_message_handler(message):
 
                 except KeyError:
                     pass
-                except SpamError as e:
+                except Exception as e:
                     dbg(e)
+
                 if i> 200:
                     i=0
                     for p in sorted({ k:v for k, v in counter.items() if k not in evicted }.items(),
