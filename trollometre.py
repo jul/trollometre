@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# licence WTFPL 2.0 fait ce que tu veux avec sauf dire que tu l'as fait @jul 2025
 #basé sur https://gist.github.com/stuartlangridge/20ffe860fee0ecc315d3878c1ea77c35
 
 import json
