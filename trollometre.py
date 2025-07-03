@@ -15,13 +15,23 @@ from json import load, dumps
 cfg = load(open(os.path.expanduser("~/.bluesky.json")))
 handle = cfg["handle"]
 password= cfg["password"]
-def dbg(msg): sys.stderr.write(repr(msg));sys.stderr.flush()
+def dbg(msg): sys.stderr.write(str(msg));sys.stderr.flush()
+
+
 
 counter = mdict()
-seen = set([])
+scorer_fr = mdict()
+scorer = mdict()
+seen = set()
 at=dict()
-evicted = set([])
+evicted = set()
+try:
+    evicted = set(load(open(os.path.expanduser("~/.trollometre.json")))["evicted"])
+    print(evicted)
+except Exception as e:
+    dbg(e)
 i=0
+j=0
 
 class JSONExtra(json.JSONEncoder):
     """raw objects sometimes contain CID() objects, which
@@ -91,10 +101,10 @@ def send_post(payload):
 # https://github.com/MarshalX/bluesky-feed-generator/blob/main/server/data_stream.py
 class SpamError(Exception):
     pass
-
+k=0
 def on_message_handler(message):
     commit = parse_subscribe_repos_message(message)
-    global counter, evicted,i, bsc
+    global counter, evicted,i, bsc, j, k
     if not isinstance(commit, models.ComAtprotoSyncSubscribeRepos.Commit):
         return
     car = CAR.from_bytes(commit.blocks)
@@ -102,53 +112,60 @@ def on_message_handler(message):
         if op.action in ["create"] and op.cid:
             raw = car.blocks.get(op.cid)
             cooked = get_or_create(raw, strict=False)
-            if cooked and cooked.py_type == "app.bsky.feed.post":
+            if cooked:# and cooked.py_type == "app.bsky.feed.post":
                 toprint=""
                 try:
-                    if { "fr", } & set(raw["langs"]):
-                        uri = raw["reply"]["root"]["uri"]
-                        toprint = raw = bsc.get_posts([uri])
-                        post = raw = raw.posts[0]
-                        if "market" in raw["author"].handle:
-                            raise SpamError(f"market in {raw['author'].handle}")
+                    uri = raw["reply"]["root"]["uri"]
+                    toprint = raw = bsc.get_posts([uri])
+                    post = raw = raw.posts[0]
+                    if "market" in raw["author"].handle:
+                        raise SpamError(f"market in {raw['author'].handle}")
 
-                        _,_,did,collection,rkey = uri.split("/")
-                        url = f"https://bsky.app/profile/{did}/post/{rkey}"
-                        at[url] = uri
+                    #from pdb import set_trace;set_trace()
+                    if post.record.langs and set(post.record.langs) & {'fr',}:
                         i+=1
-                        #from pdb import set_trace;set_trace()
-                        if set(post.record.langs) & {'fr',}:
-                            sys.stderr.write(".")
-                            sys.stderr.flush()
-                            if url not in evicted:
+                        dbg(".")
+                        if uri not in evicted:
+                            counter += mdict({uri : 1 })
+                            scorer_fr[uri] = post.like_count+post.repost_count+post.quote_count+post.reply_count
 
-                                counter[url] = post.like_count+post.repost_count+post.quote_count+post.reply_count
-                
+                    else:
+                        scorer[uri] = post.like_count+post.repost_count+post.quote_count+post.reply_count
+                        dbg("+")
+                        k+=1
                 except IndexError:
                     dbg(toprint)
                     pass
 
                 except KeyError:
                     pass
+
                 except Exception as e:
                     dbg(e)
 
-                if i> 200:
+                if i> 150:
+                    j+=1
                     i=0
-                    for p in sorted({ k:v for k, v in counter.items() if k not in evicted }.items(),
+                    mydict = ( scorer_fr, scorer, scorer_fr, scorer_fr, counter)[j%5]
+
+                    for p in sorted({ k:v for k, v in mydict.items() if k not in evicted }.items(),
                         key=lambda x : x[1] )[::-1][0:1]:
                         dbg(p)
-                        dbg(p[0].split("/")[-1])
                         if p[1]>25:
                             try:
-                                raw = bsc.get_posts([at[p[0]]])
+                                raw = bsc.get_posts([p[0]])
                                 dbg(raw)
-                                send_post(get_root_refs(at[p[0]], f"[BOT] le niveau d'agitation ici est de : {p[1]}"))
+                                send_post(get_root_refs(p[0], f"[BOT] le niveau d'agitation ici est de : {p[1]}"))
                             except KeyError:
                                 dbg("invalid post")
                                 dbg(raw)
                             finally:
                                 evicted |= {p[0],}
+                                try:
+                                    with open(os.path.expanduser("~/.trollometre.json"), "w") as f:
+                                        json.dump(dict(evicted=list(evicted)), f)
+                                except Exception as e:
+                                    dbg(e)
 
                         
 
