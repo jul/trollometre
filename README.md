@@ -3,6 +3,8 @@
 Le trollomètre est un bot qui emplit sa chronologie de tout les posts qui
 passent qui semblent agiter bluesky.
 
+Son profil bluesky est ici : https://bsky.app/profile/trollometre.bsky.social
+
 ## Mais pourquoi des posts en Français d'autres en Anglais ?
 
 Parce que ça permet de voir un peu le vaste monde.
