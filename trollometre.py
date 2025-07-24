@@ -124,14 +124,13 @@ def on_message_handler(message):
                         raise SpamError(f"spam in {raw['author'].handle}")
 
                     #from pdb import set_trace;set_trace()
-                    if uri not in evicted:
-                        last=dict({ uri : post.like_count+post.repost_count+post.quote_count+post.reply_count})
                     if post.record.langs and set(post.record.langs) & {'fr',}:
                         nb_fr+=1
                         dbg(".")
                         if uri not in evicted:
                             counter += mdict({uri : 1 })
                             scorer_fr[uri] = post.like_count+post.repost_count+post.quote_count+post.reply_count
+                            last=dict({ uri : post.like_count+post.repost_count+post.quote_count+post.reply_count})
 
                     else:
                         scorer[uri] = post.like_count+post.repost_count+post.quote_count+post.reply_count
