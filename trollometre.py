@@ -103,10 +103,11 @@ def send_post(payload):
 class SpamError(Exception):
     pass
 nb_not_fr=0
+last= dict()
 last_step=time()
 def on_message_handler(message):
     commit = parse_subscribe_repos_message(message)
-    global counter, evicted,nb_fr, bsc, j, nb_not_fr, last_step
+    global counter, evicted,nb_fr, bsc, j, nb_not_fr, last_step, last
     if not isinstance(commit, models.ComAtprotoSyncSubscribeRepos.Commit):
         return
     car = CAR.from_bytes(commit.blocks)
