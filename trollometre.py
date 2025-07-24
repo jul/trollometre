@@ -150,7 +150,7 @@ def on_message_handler(message):
                 if time() - last_step > 600:
                     j+=1
                     last_step = time()
-                    dbg(i)
+                    dbg(nb_fr)
                     with open(os.path.expanduser("~/trollometre.csv"), "a") as f:
                         f.write(f"{time()},{nb_fr},{nb_not_fr}\n")
 
