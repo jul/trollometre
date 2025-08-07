@@ -13,17 +13,27 @@ webSocket.onmessage = ({data}) => {
    document.body.appendChild(message)
   json = JSON.parse(data)
   console.log(json)
+   const uri = json.uri;
+   const res = uri.split("/")
+    url = "https://bsky.app/profile/" + res[2] + "/post/" + res[4]
+       message.innerHTML = message.innerHTML + "<a href=" + url + ">" + url +"</a><br/>";
+
     const content = document.createTextNode(json["record"]["text"]);
     message.appendChild(content);
     json.embed.images != null && json.embed.images.forEach((val, index) => {
         img = document.createElement("img")
         img.src=val["fullsize"];
         message.appendChild(img);
+       message.innerHTML = message.innerHTML + "<br>"
+
    })
 
 
-
+       message.innerHTML = message.innerHTML + "<br>"
    message.innerHTML = message.innerHTML + "<button onClick=\"var xhr = new XMLHttpRequest(); xhr.open('GET','http://127.0.0.1:5000/spam/'+ encodeURIComponent(json.uri) + '/false');xhr.send()\" >HAM</button>"
+   message.innerHTML = message.innerHTML + "<button onClick=\"var xhr = new XMLHttpRequest(); xhr.open('GET','http://127.0.0.1:5000/spam/'+ encodeURIComponent(json.uri) + '/true');xhr.send()\" >SPAM</button>"
+       message.innerHTML = message.innerHTML + "<hr>"
+
 };
 $("#a").on("click", () => { console.log("click"); webSocket.send("lol") })
 

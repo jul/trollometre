@@ -11,17 +11,15 @@ password= cfg["password"]
 client = FirehoseSubscribeReposClient()
 bsc = Client()
 bsc.login(handle, password)
-import sqlite3 as sq
+import psycopg2 as sq
 
-con = sq.connect("trollo.db")
+con = sq.connect(database="trollo", user="jul")
 cur = con.cursor()
 
 
 def get_root_refs(parent_uri: str, text : str) :
     global bsc
-    print(parent_uri.split("/"))
     _,_,did,collection, rkey = parent_uri.split("/")
-    print(f" {did} {collection} {rkey}")
     pds_url = "https://bsky.social"
     resp = requests.get(
         pds_url + "/xrpc/com.atproto.repo.getRecord",
@@ -76,9 +74,14 @@ def spam(uri, is_spam):
     print("spam")
     print(uri)
     print(is_spam)
-    cur.execute("update posts SET is_spam= ? where uri = ?", [ is_spam=="true", uri, ])
+    cur.execute("update posts SET is_spam= %s where uri = %s", [ is_spam=="true", uri, ])
     con.commit()
     if is_spam != "true":
+        cur.execute("select score from posts where uri = %s", (uri,))
+        score = cur.fetchone()[0]
+        print(f"score for uri is {score}")
+        send_post(get_root_refs(uri, f"[BOT] le niveau d'agitation ici est de : {score}"))
+
         print("is ham")
 
     return "spam"

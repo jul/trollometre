@@ -160,7 +160,7 @@ def on_message_handler(message):
                 except Exception as e:
                     dbg(e)
                 # TIME
-                if time() - last_step > 6:
+                if time() - last_step > 600:
                     j+=1
                     last_step = time()
                     dbg(nb_fr)
@@ -186,10 +186,14 @@ def on_message_handler(message):
                             json = post.model_dump_json()
 
                             #dbg(dumps(loads(raw.posts[0].json()),indent=4))
-                            cur.execute("INSERT INTO posts (uri, url, post, score) VALUES(%s, %s, %s, %s)",
-                                [ p[0], url, json, post.like_count+post.repost_count+post.quote_count+post.reply_count])
+                            try:
+                                cur.execute("INSERT INTO posts (uri, url, post, score) VALUES(%s, %s, %s, %s)",
+                                    [ p[0], url, json, post.like_count+post.repost_count+post.quote_count+post.reply_count])
+                            except:
+                                con.rollback()
+                            finally:
+                                con.commit()
                             q.put(json)
-                            con.commit()
 
 
                             dbg(raw.posts[0].record.text)
