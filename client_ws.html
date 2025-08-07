@@ -5,25 +5,25 @@
 <script>
 $(document).ready(function () { 
     webSocket = new WebSocket("ws://localhost:8765");
-    const messages = document.createElement("ul");
-      document.body.appendChild(messages);
 
 
 webSocket.onmessage = ({data}) => {
   console.log(event.data);
-  const message = document.createElement("li");
+  message = document.createElement("div");
+   document.body.appendChild(message)
   json = JSON.parse(data)
   console.log(json)
     const content = document.createTextNode(json["record"]["text"]);
     message.appendChild(content);
-    messages.appendChild(message);
-    console.log(json.embed.images)
-    json.embed.images && json.embed.images.forEach((val, index) => {
+    json.embed.images != null && json.embed.images.forEach((val, index) => {
         img = document.createElement("img")
         img.src=val["fullsize"];
         message.appendChild(img);
    })
 
+
+
+   message.innerHTML = message.innerHTML + "<button onClick=\"var xhr = new XMLHttpRequest(); xhr.open('GET','http://127.0.0.1:5000/spam/'+ encodeURIComponent(json.uri) + '/false');xhr.send()\" >HAM</button>"
 };
 $("#a").on("click", () => { console.log("click"); webSocket.send("lol") })
 
