@@ -1,0 +1,38 @@
+<html>
+<head>
+
+<script src=./jq.js ></script>
+<script>
+$(document).ready(function () { 
+    webSocket = new WebSocket("ws://localhost:8765");
+    const messages = document.createElement("ul");
+      document.body.appendChild(messages);
+
+
+webSocket.onmessage = ({data}) => {
+  console.log(event.data);
+  const message = document.createElement("li");
+  json = JSON.parse(data)
+  console.log(json)
+    const content = document.createTextNode(json["record"]["text"]);
+    message.appendChild(content);
+    messages.appendChild(message);
+    console.log(json.embed.images)
+    json.embed.images && json.embed.images.forEach((val, index) => {
+        img = document.createElement("img")
+        img.src=val["fullsize"];
+        message.appendChild(img);
+   })
+
+};
+$("#a").on("click", () => { console.log("click"); webSocket.send("lol") })
+
+
+})
+</script>
+</head>
+<body>
+<button id=a >Click </button>
+
+</body>
+</html>
