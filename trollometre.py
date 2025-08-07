@@ -15,6 +15,13 @@ import re
 from json import load, dumps, loads
 import sqlite3 as sq
 
+import asyncio
+from websockets.asyncio.server import serve
+from multiprocessing import Process, Queue
+q= Queue()
+
+
+
 con = sq.connect("trollo.db")
 cur = con.cursor()
 
@@ -153,7 +160,7 @@ def on_message_handler(message):
                 except Exception as e:
                     dbg(e)
                 # TIME
-                if time() - last_step > 600:
+                if time() - last_step > 6:
                     j+=1
                     last_step = time()
                     dbg(nb_fr)
@@ -176,10 +183,12 @@ def on_message_handler(message):
                             dbg(f"{url}\n")
                             dbg("\n")
                             post = raw.posts[0]
+                            json = post.model_dump_json()
 
                             #dbg(dumps(loads(raw.posts[0].json()),indent=4))
                             cur.execute("INSERT INTO posts (uri, url, post, score) VALUES(?, ?, ?, ?)",
-                                [ p[0], url, post.model_dump_json(), post.like_count+post.repost_count+post.quote_count+post.reply_count])
+                                [ p[0], url, json, post.like_count+post.repost_count+post.quote_count+post.reply_count])
+                            q.put(json)
                             con.commit()
 
 
@@ -197,9 +206,24 @@ def on_message_handler(message):
                             except Exception as e:
                                 dbg(e)
 
+def websocket_server(q):
+    async def echo(websocket):
+        while message:=q.get():
+            await websocket.send(message)
+
+    async def main():
+        async with serve(echo, "localhost", 8765) as server:
+            await server.serve_forever()
+
+    asyncio.run(main())
+
+p = Process(target=websocket_server, args =(q,))
+p.start()
+
 while [ 1 ]:
     try:
         client.start(on_message_handler)
     except:
         pass
 
+p.join()
