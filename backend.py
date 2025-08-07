@@ -1,5 +1,65 @@
 from flask import Flask
 from flask import request
+import os
+from atproto_client.models import get_or_create
+from atproto import CAR, models, Client, client_utils
+from atproto_firehose import FirehoseSubscribeReposClient, parse_subscribe_repos_message
+from json import load
+cfg = load(open(os.path.expanduser("~/.bluesky.json")))
+handle = cfg["handle"]
+password= cfg["password"]
+client = FirehoseSubscribeReposClient()
+bsc = Client()
+bsc.login(handle, password)
+import sqlite3 as sq
+
+con = sq.connect("trollo.db")
+cur = con.cursor()
+
+
+def get_root_refs(parent_uri: str, text : str) :
+    global bsc
+    print(parent_uri.split("/"))
+    _,_,did,collection, rkey = parent_uri.split("/")
+    print(f" {did} {collection} {rkey}")
+    pds_url = "https://bsky.social"
+    resp = requests.get(
+        pds_url + "/xrpc/com.atproto.repo.getRecord",
+        params=dict(
+            repo = did,
+            collection = collection,
+            rkey = rkey,
+       )
+    )
+    resp.raise_for_status()
+    parent = resp.json()
+    root = parent
+
+    return {
+          "$type": "app.bsky.feed.post",
+          "text": text,
+          "createdAt": bsc.get_current_time_iso(),
+          "embed": {
+          "$type": "app.bsky.embed.record",
+          "record": {
+            "uri": root["uri"],
+            "cid": root["cid"],
+            }
+          }
+        }
+def send_post(payload):
+    global bsc
+    pds_url = "https://bsky.social"
+    resp = requests.post(
+        pds_url + "/xrpc/com.atproto.repo.createRecord",
+        headers=bsc._get_access_auth_headers(),
+        json=dict(
+            repo=bsc.me.did,
+            collection = "app.bsky.feed.post",
+            record = payload )
+    )
+    resp.raise_for_status()
+
 
 
 app = Flask(__name__)
@@ -16,4 +76,9 @@ def spam(uri, is_spam):
     print("spam")
     print(uri)
     print(is_spam)
+    cur.execute("update posts SET is_spam= ? where uri = ?", [ is_spam=="true", uri, ])
+    con.commit()
+    if is_spam != "true":
+        print("is ham")
+
     return "spam"
