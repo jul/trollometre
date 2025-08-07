@@ -13,7 +13,7 @@ from archery import mdict
 from time import time
 import re
 from json import load, dumps, loads
-import sqlite3 as sq
+import psycopg2 as sq
 
 import asyncio
 from websockets.asyncio.server import serve
@@ -22,7 +22,7 @@ q= Queue()
 
 
 
-con = sq.connect("trollo.db")
+con = sq.connect(dbname="trollo", user="jul")
 cur = con.cursor()
 
 
@@ -186,7 +186,7 @@ def on_message_handler(message):
                             json = post.model_dump_json()
 
                             #dbg(dumps(loads(raw.posts[0].json()),indent=4))
-                            cur.execute("INSERT INTO posts (uri, url, post, score) VALUES(?, ?, ?, ?)",
+                            cur.execute("INSERT INTO posts (uri, url, post, score) VALUES(%s, %s, %s, %s)",
                                 [ p[0], url, json, post.like_count+post.repost_count+post.quote_count+post.reply_count])
                             q.put(json)
                             con.commit()
