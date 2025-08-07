@@ -12,7 +12,12 @@ from atproto_firehose import FirehoseSubscribeReposClient, parse_subscribe_repos
 from archery import mdict
 from time import time
 import re
-from json import load, dumps
+from json import load, dumps, loads
+import sqlite3 as sq
+
+con = sq.connect("trollo.db")
+cur = con.cursor()
+
 
 cfg = load(open(os.path.expanduser("~/.bluesky.json")))
 handle = cfg["handle"]
@@ -121,7 +126,7 @@ def on_message_handler(message):
                     uri = raw["reply"]["root"]["uri"]
                     toprint = raw = bsc.get_posts([uri])
                     post = raw = raw.posts[0]
-                    if "market" in raw["author"].handle or "yuno-wov" in raw["author"]:
+                    if "robot" in raw['author'] or "market" in raw["author"].handle or "yuno-wov" in raw["author"]:
                         raise SpamError(f"spam in {raw['author'].handle}")
 
                     #from pdb import set_trace;set_trace()
@@ -147,13 +152,13 @@ def on_message_handler(message):
 
                 except Exception as e:
                     dbg(e)
-
+                # TIME
                 if time() - last_step > 600:
                     j+=1
                     last_step = time()
                     dbg(nb_fr)
                     with open(os.path.expanduser("~/trollometre.csv"), "a") as f:
-                        f.write(f"{time()},{nb_fr},{nb_not_fr}\n")
+                        f.write(f"{int(time())},{nb_fr},{nb_not_fr}\n")
 
                     nb_fr=0
                     nb_not_fr=0
@@ -164,8 +169,23 @@ def on_message_handler(message):
                         dbg(p)
                         try:
                             raw = bsc.get_posts([p[0]])
-                            dbg(raw)
-                            send_post(get_root_refs(p[0], f"[BOT] le niveau d'agitation ici est de : {p[1]}"))
+                            _,_,did,collection, rkey = p[0].split("/")
+                            url = f"https://bsky.app/profile/{did}/post/{rkey}"
+                            dbg("\n")
+
+                            dbg(f"{url}\n")
+                            dbg("\n")
+                            post = raw.posts[0]
+
+                            #dbg(dumps(loads(raw.posts[0].json()),indent=4))
+                            cur.execute("INSERT INTO posts (uri, url, post, score) VALUES(?, ?, ?, ?)",
+                                [ p[0], url, post.model_dump_json(), post.like_count+post.repost_count+post.quote_count+post.reply_count])
+                            con.commit()
+
+
+                            dbg(raw.posts[0].record.text)
+                            
+                            # send_post(get_root_refs(p[0], f"[BOT] le niveau d'agitation ici est de : {p[1]}"))
                         except KeyError:
                             dbg("invalid post")
                             dbg(raw)

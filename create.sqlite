@@ -1,0 +1,11 @@
+CREATE TABLE posts (
+    uri     TEXT PRIMARY KEY,
+    url     TEXT NOT NULL,
+    post TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    is_spam BOOL,
+    score INTEGER not NULL,
+    is_ham BOOL,
+    is_evicted BOOL DEFAULT FALSE
+
+);
