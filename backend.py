@@ -1,6 +1,7 @@
 from flask import Flask
 from flask import request
 import os
+import requests
 from atproto_client.models import get_or_create
 from atproto import CAR, models, Client, client_utils
 from atproto_firehose import FirehoseSubscribeReposClient, parse_subscribe_repos_message
@@ -10,7 +11,6 @@ handle = cfg["handle"]
 password= cfg["password"]
 client = FirehoseSubscribeReposClient()
 bsc = Client()
-bsc.login(handle, password)
 import psycopg2 as sq
 
 con = sq.connect(database="trollo", user="jul")
@@ -47,6 +47,7 @@ def get_root_refs(parent_uri: str, text : str) :
         }
 def send_post(payload):
     global bsc
+    bsc.login(handle, password)
     pds_url = "https://bsky.social"
     resp = requests.post(
         pds_url + "/xrpc/com.atproto.repo.createRecord",
@@ -72,16 +73,20 @@ def hello(name):
 @app.get('/spam/<path:uri>/<is_spam>')
 def spam(uri, is_spam):
     print("spam")
-    print(uri)
+    print(f"<{uri}>")
     print(is_spam)
-    cur.execute("update posts SET is_spam= %s where uri = %s", [ is_spam=="true", uri, ])
-    con.commit()
-    if is_spam != "true":
-        cur.execute("select score from posts where uri = %s", (uri,))
-        score = cur.fetchone()[0]
-        print(f"score for uri is {score}")
-        send_post(get_root_refs(uri, f"[BOT] le niveau d'agitation ici est de : {score}"))
+    cur.execute("select is_spam from posts where is_spam is NULL and uri = %s", (uri,))
+    if cur.fetchone() is not None:
+        if is_spam != "true":
+        
+            cur.execute("select score from posts where uri = %s", (uri,))
+            score = cur.fetchone()[0]
 
-        print("is ham")
+            print(f"score for uri is {score}")
+            send_post(get_root_refs(uri, f"[BOT] le niveau d'agitation ici est de : {score}"))
+
+            print("is ham")
+        cur.execute("update posts SET is_spam= %s where uri = %s", [ is_spam=="true", uri, ])
+        con.commit()
 
     return "spam"

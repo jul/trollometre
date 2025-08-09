@@ -40,7 +40,10 @@ seen = set()
 at=dict()
 evicted = set()
 try:
-    evicted = set(load(open(os.path.expanduser("~/.trollometre.json")))["evicted"])
+    cur.execute("select uri from posts")
+    for l in cur.fetchall():
+        evicted |= set(l)
+
     print(evicted)
 except Exception as e:
     dbg(e)
@@ -160,7 +163,7 @@ def on_message_handler(message):
                 except Exception as e:
                     dbg(e)
                 # TIME
-                if time() - last_step > 600:
+                if time() - last_step > 300:
                     j+=1
                     last_step = time()
                     dbg(nb_fr)
@@ -169,7 +172,7 @@ def on_message_handler(message):
 
                     nb_fr=0
                     nb_not_fr=0
-                    mydict = ( scorer_fr, scorer, scorer_fr, scorer_fr, counter, scorer_fr, last,)[j%7]
+                    mydict = ( scorer_fr, scorer_fr, scorer_fr, scorer_fr, counter, scorer_fr, last,)[j%7]
 
                     for p in sorted({ k:v for k, v in mydict.items() if k not in evicted }.items(),
                         key=lambda x : x[1] )[::-1][0:1]:
