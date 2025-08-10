@@ -102,7 +102,7 @@ print(ratio_detection)
 avg_len['ham']["avg"] = avg_len["ham"]["total"]/avg_len["ham"]["n"]
 avg_len['spam']["avg"] = avg_len["spam"]["total"]/avg_len["spam"]["n"]
 
-alpha = 2
+alpha = .5
 voc = av_vect["ham"] + av_vect["spam"]
 n_vocabulary = len(voc)
 parameters = vdict(vdict(ham=vdict(), spam=vdict()))
