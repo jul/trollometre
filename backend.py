@@ -65,28 +65,28 @@ app = Flask(__name__)
 
 
 
-@app.get("/hello/<name>")
-def hello(name):
-    print(name)
-    return "name"
 
 @app.get('/spam/<path:uri>/<is_spam>')
 def spam(uri, is_spam):
     print("spam")
     print(f"<{uri}>")
     print(is_spam)
-    cur.execute("select is_spam from posts where is_spam is NULL and uri = %s", (uri,))
-    if cur.fetchone() is not None:
-        if is_spam != "true":
-        
-            cur.execute("select score from posts where uri = %s", (uri,))
-            score = cur.fetchone()[0]
+    cur.execute("update posts SET is_spam= %s where uri = %s", [ is_spam=="true", uri, ])
+    con.commit()
 
-            print(f"score for uri is {score}")
-            send_post(get_root_refs(uri, f"[BOT] le niveau d'agitation ici est de : {score}"))
+    return "is_spam %r" % is_spam
 
-            print("is ham")
-        cur.execute("update posts SET is_spam= %s where uri = %s", [ is_spam=="true", uri, ])
-        con.commit()
+@app.get('/post/<path:uri>')
+def post(uri):
+    try:
+        cur.execute("select score from posts where uri = %s", (uri,))
+        score = cur.fetchone()[0]
+        send_post(get_root_refs(uri, f"[BOT] le niveau d'agitation ici est de : {score}"))
+        print("sent")
+        return "ok"
+    except Exception as e:
+        print(e)
+        return "ko"
 
-    return "spam"
+
+

@@ -2,14 +2,13 @@
 # licence WTFPL 2.0 fait ce que tu veux avec sauf dire que tu l'as fait @jul 2025
 #basé sur https://gist.github.com/stuartlangridge/20ffe860fee0ecc315d3878c1ea77c35
 
-import json
 import os
 import sys
 from atproto_client.models import get_or_create
 from atproto import CAR, models, Client, client_utils
 import requests
 from atproto_firehose import FirehoseSubscribeReposClient, parse_subscribe_repos_message
-from archery import mdict
+from archery import mdict, vdict
 from time import time
 import re
 from json import load, dumps, loads
@@ -32,6 +31,74 @@ password= cfg["password"]
 def dbg(msg): sys.stderr.write(str(msg));sys.stderr.flush()
 
 
+training_set = vdict(load(open(os.path.expanduser("~/.trollometre.vect.json")))["ham_spam"])
+
+
+import spacy
+from langdetect import detect
+from nltk.corpus import stopwords
+from nltk.stem.snowball import SnowballStemmer
+stemmer = SnowballStemmer(language='french')
+
+stop_words = set(stopwords.words('french')) | {',', ':', '#', '-', '\n', '\n\n', '.', '!', '(', ')',  }
+
+nlp = spacy.load("fr_core_news_sm")
+def counter(list_of_words):
+    res = vdict()
+    for i in list_of_words:
+        res += vdict({ i : 1 })
+    return res
+
+print(counter(['a','a', 'b']))
+def return_token_sent(sentence):
+    # Tokeniser la phrase
+    doc = nlp(sentence)
+    # Retourner le texte de chaque phrase
+    return [X.text for X in doc.sents]
+
+def return_stem(sentence):
+    doc = nlp(sentence)
+    return [stemmer.stem(X.text) for X in doc if X.text not in stop_words]
+
+from emoji import is_emoji
+def parse(post):
+    text = post["record"]["text"]
+
+    res = vdict()
+    try:
+        if not post:
+            return vdict(SPAM=1)
+        if detect(text)!="fr":
+            return vdict()
+    except:
+        return res
+
+    if text:
+        res1 = map(return_stem, return_token_sent(text))
+        print(list(res1))
+        res2 = map(counter, list(res1))
+        res3 = sum(res2, vdict())
+        print(res3)
+        res = vdict(res3)
+    for w in text.split():
+        if w.startswith("#") or w.startswith("@"):
+            res+=vdict({w:1 })
+            if w.lower() in { "#nfsw",  "#vendrediseins", "#jeudipussy", "@ma-queue.com" , "@mon-cul.com", '#respectauxcreateurs' } or 'cum' in w.lower() or "orgasm" in w.lower():
+                res+=vdict(SPAM=1)
+    for c in text:
+        if is_emoji(c):
+            res+=vdict({c:1 })
+    return res
+
+
+def is_a_spam(post):
+    vtext = parse(post)
+    if "SPAM" in vtext or not vtext:
+        return True
+    return vtext.cos(training_set["spam"]) > vtext.cos(training_set["ham"])
+
+
+
 
 counter = mdict()
 scorer_fr = mdict()
@@ -50,17 +117,6 @@ except Exception as e:
 nb_fr=0
 j=0
 
-class JSONExtra(json.JSONEncoder):
-    """raw objects sometimes contain CID() objects, which
-    seem to be references to something elsewhere in bluesky.
-    So, we 'serialise' these as a string representation,
-    which is a hack but whatevAAAAR"""
-    def default(self, obj):
-        try:
-            result = json.JSONEncoder.default(self, obj)
-            return result
-        except:
-            return repr(obj)
 
 client = FirehoseSubscribeReposClient()
 
@@ -186,12 +242,13 @@ def on_message_handler(message):
                             dbg(f"{url}\n")
                             dbg("\n")
                             post = raw.posts[0]
+                            maybe_spam = is_a_spam(post)
                             json = post.model_dump_json()
 
                             #dbg(dumps(loads(raw.posts[0].json()),indent=4))
                             try:
-                                cur.execute("INSERT INTO posts (uri, url, post, score) VALUES(%s, %s, %s, %s)",
-                                    [ p[0], url, json, post.like_count+post.repost_count+post.quote_count+post.reply_count])
+                                cur.execute("INSERT INTO posts (uri, url, post, score, maybe_spam) VALUES(%s, %s, %s, %s, %s)",
+                                    [ p[0], url, json, post.like_count+post.repost_count+post.quote_count+post.reply_count, maybe_spam])
                             except:
                                 con.rollback()
                             finally:
@@ -200,8 +257,8 @@ def on_message_handler(message):
 
 
                             dbg(raw.posts[0].record.text)
-                            
-                            # send_post(get_root_refs(p[0], f"[BOT] le niveau d'agitation ici est de : {p[1]}"))
+                            if not maybe_spam:
+                                send_post(get_root_refs(p[0], f"[BOT] le niveau d'agitation ici est de : {p[1]}"))
                         except KeyError:
                             dbg("invalid post")
                             dbg(raw)
