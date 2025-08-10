@@ -228,7 +228,7 @@ def on_message_handler(message):
 
                     nb_fr=0
                     nb_not_fr=0
-                    mydict = ( scorer_fr, scorer_fr, scorer_fr, scorer_fr, counter, scorer_fr, last,)[j%7]
+                    mydict = ( scorer_fr, scorer_fr, scorer_fr, scorer_fr, scorer_fr, scorer_fr, scorer_fr,)[j%7]
 
                     for p in sorted({ k:v for k, v in mydict.items() if k not in evicted }.items(),
                         key=lambda x : x[1] )[::-1][0:1]:
