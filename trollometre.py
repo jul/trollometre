@@ -9,7 +9,7 @@ from atproto import CAR, models, Client, client_utils
 import requests
 from atproto_firehose import FirehoseSubscribeReposClient, parse_subscribe_repos_message
 from archery import mdict, vdict
-from time import time
+from time import time, sleep
 import re
 from json import load, dumps, loads
 import psycopg2 as sq
@@ -43,13 +43,13 @@ stemmer = SnowballStemmer(language='french')
 stop_words = set(stopwords.words('french')) | {',', ':', '#', '-', '\n', '\n\n', '.', '!', '(', ')',  }
 
 nlp = spacy.load("fr_core_news_sm")
-def counter(list_of_words):
-    res = vdict()
+def fcounter(list_of_words):
+    res = vdict({})
     for i in list_of_words:
         res += vdict({ i : 1 })
     return res
 
-print(counter(['a','a', 'b']))
+print(fcounter(['a','a', 'b']))
 def return_token_sent(sentence):
     # Tokeniser la phrase
     doc = nlp(sentence)
@@ -63,27 +63,51 @@ def return_stem(sentence):
 from emoji import is_emoji
 def parse(post):
     text = post["record"]["text"]
+    #from pdb import set_trace; set_trace()
+    if post["labels"]:
+        for i in post["labels"]:
+            if i["val"] == "porn":
+                dbg("is porn")
+                return vdict(SPAM=1)
+
+    if post["embed"]:
+        if "images" in post["embed"]:
+            for i in post["embed"]["images"]:
+                if not i["alt"]:
+                     text += " NO_ALT"
+                text += " " + i["alt"]
+        if "external" in post["embed"]:
+            text += " " + post["embed"]["external"]["title"]
+            text += " " + post["embed"]["external"]["description"]
+
+
 
     res = vdict()
     try:
         if not post:
+            dbg("not post")
             return vdict(SPAM=1)
         if detect(text)!="fr":
+            dbg("dtec" + detect(text))
             return vdict()
-    except:
+    except Exception as e:
+        dbg(e)
         return res
 
     if text:
         res1 = map(return_stem, return_token_sent(text))
-        print(list(res1))
-        res2 = map(counter, list(res1))
+        res2 = map(fcounter, res1)
         res3 = sum(res2, vdict())
+        print("lol")
         print(res3)
         res = vdict(res3)
+        if len(res) < 10:
+            dbg("too short")
+            return vdict(SPAM = 1)
     for w in text.split():
         if w.startswith("#") or w.startswith("@"):
             res+=vdict({w:1 })
-            if w.lower() in { "#nfsw",  "#vendrediseins", "#jeudipussy", "@ma-queue.com" , "@mon-cul.com", '#respectauxcreateurs' } or 'cum' in w.lower() or "orgasm" in w.lower():
+            if w.lower() in { "#nfsw",  "#vendrediseins", "#jeudipussy", "@ma-queue.com" , "@mon-cul.com", '#respectauxcréateurs' } or 'cum' in w.lower() or "orgasm" in w.lower() or "porn" in w.lower():
                 res+=vdict(SPAM=1)
     for c in text:
         if is_emoji(c):
@@ -94,8 +118,12 @@ def parse(post):
 def is_a_spam(post):
     vtext = parse(post)
     if "SPAM" in vtext or not vtext:
+        dbg("SPAM in vtext?")
+        dbg("SPAM" in vtext)
         return True
-    return vtext.cos(training_set["spam"]) > vtext.cos(training_set["ham"])
+    dbg(f"""c1 : {vtext.dot(training_set["spam"])}""")
+    dbg(f"""c2 {vtext.dot(training_set["ham"])}""")
+    return vtext.dot(training_set["spam"]) > vtext.dot(training_set["ham"])
 
 
 
@@ -229,46 +257,55 @@ def on_message_handler(message):
                     nb_fr=0
                     nb_not_fr=0
                     mydict = ( scorer_fr, scorer_fr, scorer_fr, scorer_fr, scorer_fr, scorer_fr, scorer_fr,)[j%7]
+                    picked = False
+                    while not picked and { k:v for k, v in mydict.items() if k not in evicted }:
 
-                    for p in sorted({ k:v for k, v in mydict.items() if k not in evicted }.items(),
-                        key=lambda x : x[1] )[::-1][0:1]:
-                        dbg(p)
-                        try:
-                            raw = bsc.get_posts([p[0]])
-                            _,_,did,collection, rkey = p[0].split("/")
-                            url = f"https://bsky.app/profile/{did}/post/{rkey}"
-                            dbg("\n")
+                        for p in sorted({ k:v for k, v in mydict.items() if k not in evicted }.items(),
+                            key=lambda x : x[1] )[::-1][0:1]:
+                            if mydict[p[0]]<100:
+                                picked = True
+                                break
 
-                            dbg(f"{url}\n")
-                            dbg("\n")
-                            post = raw.posts[0]
-                            maybe_spam = is_a_spam(post)
-                            json = post.model_dump_json()
 
-                            #dbg(dumps(loads(raw.posts[0].json()),indent=4))
+                            dbg(p)
                             try:
-                                cur.execute("INSERT INTO posts (uri, url, post, score, maybe_spam) VALUES(%s, %s, %s, %s, %s)",
-                                    [ p[0], url, json, post.like_count+post.repost_count+post.quote_count+post.reply_count, maybe_spam])
-                            except:
-                                con.rollback()
+                                raw = bsc.get_posts([p[0]])
+                                _,_,did,collection, rkey = p[0].split("/")
+                                url = f"https://bsky.app/profile/{did}/post/{rkey}"
+                                dbg("\n")
+
+                                dbg(f"{url}\n")
+                                dbg("\n")
+                                post = raw.posts[0]
+                                maybe_spam = is_a_spam(post)
+                                json = post.model_dump_json()
+
+                                #dbg(dumps(loads(raw.posts[0].json()),indent=4))
+                                try:
+                                    cur.execute("INSERT INTO posts (uri, url, post, score, maybe_spam) VALUES(%s, %s, %s, %s, %s)",
+                                        [ p[0], url, json, post.like_count+post.repost_count+post.quote_count+post.reply_count, maybe_spam])
+                                except:
+                                    con.rollback()
+                                finally:
+                                    con.commit()
+                                q.put(json)
+
+
+                                if maybe_spam == False:
+                                    picked = True
+                                    dbg("before send")
+                                    send_post(get_root_refs(p[0], f"[BOT] le niveau d'agitation ici est de : {p[1]}"))
+                                    dbg("sent")
+                            except KeyError:
+                                dbg("invalid post")
+                                dbg(raw)
                             finally:
-                                con.commit()
-                            q.put(json)
-
-
-                            dbg(raw.posts[0].record.text)
-                            if not maybe_spam:
-                                send_post(get_root_refs(p[0], f"[BOT] le niveau d'agitation ici est de : {p[1]}"))
-                        except KeyError:
-                            dbg("invalid post")
-                            dbg(raw)
-                        finally:
-                            evicted |= {p[0],}
-                            try:
-                                with open(os.path.expanduser("~/.trollometre.json"), "w") as f:
-                                    json.dump(dict(evicted=list(evicted)), f)
-                            except Exception as e:
-                                dbg(e)
+                                evicted |= {p[0],}
+                                #try:
+                                #    with open(os.path.expanduser("~/.trollometre.json"), "w") as f:
+                                #        json.dump(dict(evicted=list(evicted)), f)
+                                #except Exception as e:
+                                #    dbg(e)
 
 def websocket_server(q):
     async def echo(websocket):

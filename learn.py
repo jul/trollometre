@@ -40,11 +40,27 @@ def return_stem(sentence):
 
 def dbg(msg): sys.stderr.write(str(msg));sys.stderr.flush()
 
+
+def is_a_spam(post):
+    vtext = parse(post)
+    if "SPAM" in vtext or not vtext:
+        return True
+    return vtext.cos(av_vect["spam"]) > vtext.cos(av_vect["ham"])
+
 cur.execute("select post, is_spam from posts where is_spam is not NULL");
 av_vect = vdict(ham=vdict(), spam=vdict())
 from emoji import is_emoji
 def parse(post):
     text = post["record"]["text"]
+    if post["embed"]:
+        if "images" in post["embed"]:
+            for i in post["embed"]["images"]:
+                if not i["alt"]:
+                     text += " NO_ALT"
+                text += " " + i["alt"]
+        if "external" in post["embed"]:
+            text += " " + post["embed"]["external"]["title"]
+            text += " " + post["embed"]["external"]["description"]
 
     res = vdict()
     try:
@@ -72,13 +88,6 @@ while res := cur.fetchone():
     post, is_spam = res
     
     av_vect[["ham", "spam"][is_spam]] += parse(post)
-
-
-def is_a_spam(post):
-    vtext = parse(post)
-    if "SPAM" in vtext or not vtext:
-        return True
-    return vtext.cos(av_vect["spam"]) > vtext.cos(av_vect["ham"])
 
 
 #from pdb import set_trace; set_trace()
