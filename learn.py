@@ -126,10 +126,16 @@ for word in voc:
 
 path_to_config= os.path.expanduser("~/.trollometre.vect.json")
 settings = dict(ham_spam = parameters)
+blacklist = []
+cur.execute("select distinct((post::json#>'{author,handle}')::text) from posts where is_spam=true");
+while res := cur.fetchone():
+    blacklist += [res[0][1:-1]]
+
+
+settings = dict(ham_spam = parameters, blacklist = blacklist)
 
 with open(path_to_config, 'w') as f:
     dump(settings, f)
- 
 
 
 def is_a_spam2(post):

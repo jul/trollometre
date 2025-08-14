@@ -32,7 +32,7 @@ webSocket.onmessage = ({data}) => {
        })
     } catch {
     }
-    message.innerHTML = message.innerHTML + "<br>"
+    message.innerHTML = message.innerHTML + "<br>" + json["author"]["handle"] + "<br>"
     message.innerHTML = message.innerHTML + "<button onClick='var xhr = new XMLHttpRequest(); xhr.open(\"GET\",\"http://127.0.0.1:5000/spam/" + encodeURIComponent(json.uri) + "/false\");xhr.send()' >HAM</button> "
     message.innerHTML = message.innerHTML + "<button onClick='var xhr = new XMLHttpRequest(); xhr.open(\"GET\",\"http://127.0.0.1:5000/spam/" + encodeURIComponent(json.uri) + "/true\");xhr.send()' >SPAM</button> "
     message.innerHTML = message.innerHTML + "<button onClick='var xhr = new XMLHttpRequest(); xhr.open(\"GET\",\"http://127.0.0.1:5000/post/" + encodeURIComponent(json.uri) + "\");xhr.send()' >POST</button>"

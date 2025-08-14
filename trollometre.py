@@ -31,7 +31,9 @@ password= cfg["password"]
 def dbg(msg): sys.stderr.write(str(msg));sys.stderr.flush()
 
 
-training_set = vdict(load(open(os.path.expanduser("~/.trollometre.vect.json")))["ham_spam"])
+settings = load(open(os.path.expanduser("~/.trollometre.vect.json")))
+training_set = vdict(settings["ham_spam"])
+blacklist = set(settings["blacklist"])
 
 
 import spacy
@@ -67,6 +69,7 @@ def parse(post):
     if post["labels"]:
         for i in post["labels"]:
             if i["val"] == "porn":
+                blacklist |= set([post["author"]["handle"]])
                 dbg("is porn")
                 return vdict(SPAM=1)
 
@@ -107,7 +110,7 @@ def parse(post):
     for w in text.split():
         if w.startswith("#") or w.startswith("@"):
             res+=vdict({w:1 })
-            if w.lower() in { "#nfsw",  "#vendrediseins", "#jeudipussy", "@ma-queue.com" , "@mon-cul.com", '#respectauxcréateurs' } or 'cum' in w.lower() or "orgasm" in w.lower() or "porn" in w.lower():
+            if w.lower() in { "#nfsw",  "#vendrediseins", "#jeudipussy", "@ma-queue.com" , "@mon-cul.com", '#respectauxcréateurs' } or 'cum' in w.lower() or "orgasm" in w.lower() or "porn" in w.lower() or "coquin" in w.lower() or "salop" in w.lower() or "adult" in w.lower() or w.lower() in blacklist:
                 res+=vdict(SPAM=1)
     for c in text:
         if is_emoji(c):
@@ -220,7 +223,9 @@ def on_message_handler(message):
                     uri = raw["reply"]["root"]["uri"]
                     toprint = raw = bsc.get_posts([uri])
                     post = raw = raw.posts[0]
-                    if "robot" in raw['author'] or "market" in raw["author"].handle or "yuno-wov" in raw["author"]:
+                    if "robot" in raw['author'] or "market" in raw["author"]["handle"] or "yuno-wov" in raw["author"]["handle"] or "vulve" in raw["author"]["handle"] or "orgasm" in raw["author"]["handle"] or "apoukany" in raw["author"]["handle"] or "selfiespixy443" in raw["author"]["handle"] or raw["author"]["handle"] in blacklist:
+
+                        dbg(raw['author'].handle)
                         raise SpamError(f"spam in {raw['author'].handle}")
 
                     #from pdb import set_trace;set_trace()
