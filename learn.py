@@ -125,14 +125,17 @@ for word in voc:
     parameters["ham"] += vdict( { word :  p_word_given_ham })
 
 path_to_config= os.path.expanduser("~/.trollometre.vect.json")
+settings = load(open(path_to_config))
+blacklist = set(settings["blacklist"])
+
+
 settings = dict(ham_spam = parameters)
-blacklist = []
 cur.execute("select distinct((post::json#>'{author,handle}')::text) from posts where is_spam=true");
 while res := cur.fetchone():
-    blacklist += [res[0][1:-1]]
+    blacklist |= set([res[0][1:-1]])
 
 
-settings = dict(ham_spam = parameters, blacklist = blacklist)
+settings = dict(ham_spam = parameters, blacklist = list(blacklist))
 
 with open(path_to_config, 'w') as f:
     dump(settings, f)

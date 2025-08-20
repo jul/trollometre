@@ -11,7 +11,7 @@ from atproto_firehose import FirehoseSubscribeReposClient, parse_subscribe_repos
 from archery import mdict, vdict
 from time import time, sleep
 import re
-from json import load, dumps, loads
+from json import load, dumps, loads, dump
 import psycopg2 as sq
 
 import asyncio
@@ -30,10 +30,17 @@ handle = cfg["handle"]
 password= cfg["password"]
 def dbg(msg): sys.stderr.write(str(msg));sys.stderr.flush()
 
+path_to_config= os.path.expanduser("~/.trollometre.vect.json")
 
-settings = load(open(os.path.expanduser("~/.trollometre.vect.json")))
+settings = load(open(path_to_config))
 training_set = vdict(settings["ham_spam"])
 blacklist = set(settings["blacklist"])
+
+def save_settings():
+    global blacklist, training_set
+    with open(path_to_config, 'w') as f:
+        dump(dict(ham_spam = training_set,blacklist=list(blacklist)), f)
+
 
 
 import spacy
@@ -64,6 +71,7 @@ def return_stem(sentence):
 
 from emoji import is_emoji
 def parse(post):
+    global blacklist
     text = post["record"]["text"]
     #from pdb import set_trace; set_trace()
     if post["labels"]:
@@ -90,7 +98,7 @@ def parse(post):
         if not post:
             dbg("not post")
             return vdict(SPAM=1)
-        if detect(text)!="fr":
+        if not detect(text) in {  "fr", "ca" }:
             dbg("dtec" + detect(text))
             return vdict()
     except Exception as e:
@@ -146,6 +154,7 @@ try:
 except Exception as e:
     dbg(e)
 nb_fr=0
+nb_spam=0
 j=0
 
 
@@ -153,6 +162,25 @@ client = FirehoseSubscribeReposClient()
 
 bsc = Client()
 bsc.login(handle, password)
+
+
+def repost_root_refs(parent_uri: str) :
+    global bsc
+    print(parent_uri.split("/"))
+    _,_,did,collection, rkey = parent_uri.split("/")
+    pds_url = "https://bsky.social"
+    resp = requests.get(
+        pds_url + "/xrpc/com.atproto.repo.getRecord",
+        params=dict(
+            repo = did,
+            collection = collection,
+            rkey = rkey,
+       )
+    )
+    resp.raise_for_status()
+    parent = resp.json()
+    root = parent
+    bsc.repost(root["uri"], root["cid"])
 
 def get_root_refs(parent_uri: str, text : str) :
     global bsc
@@ -184,6 +212,8 @@ def get_root_refs(parent_uri: str, text : str) :
             }
           }
         }
+
+
 def send_post(payload):
     global bsc
     pds_url = "https://bsky.social"
@@ -205,11 +235,12 @@ def send_post(payload):
 class SpamError(Exception):
     pass
 nb_not_fr=0
+nb_block = 0
 last= dict()
 last_step=time()
 def on_message_handler(message):
     commit = parse_subscribe_repos_message(message)
-    global counter, evicted,nb_fr, bsc, j, nb_not_fr, last_step, last
+    global counter, evicted,nb_fr,nb_spam, bsc, j, nb_not_fr, last_step, last, blacklist, nb_block
     if not isinstance(commit, models.ComAtprotoSyncSubscribeRepos.Commit):
         return
     car = CAR.from_bytes(commit.blocks)
@@ -217,15 +248,14 @@ def on_message_handler(message):
         if op.action in ["create"] and op.cid:
             raw = car.blocks.get(op.cid)
             cooked = get_or_create(raw, strict=False)
-            if cooked:# and cooked.py_type == "app.bsky.feed.post":
+            if cooked and cooked.py_type == "app.bsky.feed.post":
+
                 toprint=""
                 try:
                     uri = raw["reply"]["root"]["uri"]
                     toprint = raw = bsc.get_posts([uri])
                     post = raw = raw.posts[0]
-                    if "robot" in raw['author'] or "market" in raw["author"]["handle"] or "yuno-wov" in raw["author"]["handle"] or "vulve" in raw["author"]["handle"] or "orgasm" in raw["author"]["handle"] or "apoukany" in raw["author"]["handle"] or "selfiespixy443" in raw["author"]["handle"] or raw["author"]["handle"] in blacklist:
-
-                        dbg(raw['author'].handle)
+                    if "market" in raw["author"]["handle"] or "yuno-wov" in raw["author"]["handle"] or "vulve" in raw["author"]["handle"] or raw["author"]["handle"] in blacklist:
                         raise SpamError(f"spam in {raw['author'].handle}")
 
                     #from pdb import set_trace;set_trace()
@@ -242,11 +272,13 @@ def on_message_handler(message):
                         nb_not_fr+=1
                 except IndexError:
                     dbg("-")
+                    nb_block+=1
                     pass
 
                 except KeyError:
                     pass
                 except SpamError:
+                    nb_spam+=1
                     dbg('*')
 
                 except Exception as e:
@@ -254,12 +286,13 @@ def on_message_handler(message):
                 # TIME
                 if time() - last_step > 300:
                     j+=1
-                    last_step = time()
                     dbg(nb_fr)
                     with open(os.path.expanduser("~/trollometre.csv"), "a") as f:
-                        f.write(f"{int(time())},{nb_fr},{nb_not_fr}\n")
-
+                        f.write(f"{int(time())},{nb_fr},{nb_not_fr},{nb_spam},{nb_block}\n")
+                    save_settings()
                     nb_fr=0
+                    nb_spam=0
+                    nb_block=0
                     nb_not_fr=0
                     mydict = ( scorer_fr, scorer_fr, scorer_fr, scorer_fr, scorer_fr, scorer_fr, scorer_fr,)[j%7]
                     picked = False
@@ -267,7 +300,8 @@ def on_message_handler(message):
 
                         for p in sorted({ k:v for k, v in mydict.items() if k not in evicted }.items(),
                             key=lambda x : x[1] )[::-1][0:1]:
-                            if mydict[p[0]]<100:
+## SCORE
+                            if mydict[p[0]]<110:
                                 picked = True
                                 break
 
@@ -299,7 +333,8 @@ def on_message_handler(message):
                                 if maybe_spam == False:
                                     picked = True
                                     dbg("before send")
-                                    send_post(get_root_refs(p[0], f"[BOT] le niveau d'agitation ici est de : {p[1]}"))
+                                    #send_post(get_root_refs(p[0], f"[BOT] le niveau d'agitation ici est de : {p[1]}"))
+                                    repost_root_refs(p[0])
                                     dbg("sent")
                             except KeyError:
                                 dbg("invalid post")
@@ -311,6 +346,8 @@ def on_message_handler(message):
                                 #        json.dump(dict(evicted=list(evicted)), f)
                                 #except Exception as e:
                                 #    dbg(e)
+
+                    last_step = time()
 
 def websocket_server(q):
     async def echo(websocket):

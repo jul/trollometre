@@ -17,6 +17,25 @@ con = sq.connect(database="trollo", user="jul")
 cur = con.cursor()
 
 
+def repost_root_refs(parent_uri: str) :
+    global bsc
+    bsc.login(handle, password)
+    print(parent_uri.split("/"))
+    _,_,did,collection, rkey = parent_uri.split("/")
+    pds_url = "https://bsky.social"
+    resp = requests.get(
+        pds_url + "/xrpc/com.atproto.repo.getRecord",
+        params=dict(
+            repo = did,
+            collection = collection,
+            rkey = rkey,
+       )
+    )
+    resp.raise_for_status()
+    parent = resp.json()
+    root = parent
+    bsc.repost(root["uri"], root["cid"])
+
 def get_root_refs(parent_uri: str, text : str) :
     global bsc
     _,_,did,collection, rkey = parent_uri.split("/")
@@ -81,7 +100,7 @@ def post(uri):
     try:
         cur.execute("select score from posts where uri = %s", (uri,))
         score = cur.fetchone()[0]
-        send_post(get_root_refs(uri, f"[BOT] le niveau d'agitation ici est de : {score}"))
+        repost_root_refs(uri)
         print("sent")
         return "ok"
     except Exception as e:
