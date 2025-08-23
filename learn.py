@@ -66,13 +66,22 @@ def parse(post):
     try:
         if not post:
             return vdict(SPAM=1)
-        if detect(text)!="fr":
-            return vdict()
-    except:
-        return res
+        if detect(text) not in { "fr", "ca" }:
+            return vdict(SPAM=1)
+    except Exception as e:
+        return vdict(SPAM=1)
+
 
     if text:
         res = vdict(sum(map(counter,map(return_stem, return_token_sent(text)))))
+        #suppressing url because if it has "/" IT IS AN URL per BS construct
+
+        for k,v in res.items():
+            if "/" in k:
+                if "onlyfans" in k.split("/")[0] or "mym" in k.split("/")[0]:
+                    return vdict(SPAM=1)
+        res = vdict({k:v for k,v in res.items() if "/" not in k})
+    
     for w in text.split():
         if w.startswith("#") or w.startswith("@"):
             res+=vdict({w:1 })
@@ -86,8 +95,20 @@ def parse(post):
 
 while res := cur.fetchone():
     post, is_spam = res
-    
-    av_vect[["ham", "spam"][is_spam]] += parse(post)
+    vect = parse(post) 
+    if vect:
+        av_vect[["ham", "spam"][is_spam]] += vect/abs(vect)
+
+
+common = av_vect["ham"] * av_vect["spam"]
+
+
+av_vect["ham"] = vdict({ k : v for k,v in av_vect["ham"].items() if k not in common })
+av_vect["spam"] = vdict({ k : v for k,v in av_vect["spam"].items() if k not in common })
+
+av_vect["spam"] += vdict(SPAM=abs(av_vect["spam"])/len(av_vect["spam"]))
+av_vect["spam"] += vdict(spam=abs(av_vect["spam"])/len(av_vect["spam"]))
+av_vect["spam"] += vdict(no_alt=abs(av_vect["spam"])/len(av_vect["spam"]))
 
 
 #from pdb import set_trace; set_trace()
@@ -100,73 +121,64 @@ while res := cur.fetchone():
     if post["record"]["text"]:
         text = parse(post)
         avg_len[["ham", "spam"][is_spam]]["n"]+=1
-        avg_len[["ham", "spam"][is_spam]]["total"]+=len(text)
 
 
         if abs(text):
-            ratio_detection += vdict({["ham","spam"][ is_spam]: vdict({["ham", "spam"][is_a_spam(post)] :1 })})
-
+            spammy= is_a_spam(post)
+            ratio_detection += vdict({["ham","spam"][ is_spam]: vdict({["ham", "spam"][spammy] :1 })})
+            if is_spam and not spammy:
+                print("wrong spam")
+                print(post["record"]["text"])
+            if not is_spam and spammy:
+                print("wrong ham")
+                print(text)
+                print(post["record"]["text"])
+        if not abs(text):
+            print("no text")
+            print(post["record"]["text"])
+#            ratio_detection += vdict({["ham","spam"][ is_spam]: vdict({["ham", "spam"][is_a_spam(post)] :1 })})
+            
+print(avg_len)
 print(ratio_detection)
 
-avg_len['ham']["avg"] = avg_len["ham"]["total"]/avg_len["ham"]["n"]
-avg_len['spam']["avg"] = avg_len["spam"]["total"]/avg_len["spam"]["n"]
-
-alpha = .5
-voc = av_vect["ham"] + av_vect["spam"]
-n_vocabulary = len(voc)
-parameters = vdict(vdict(ham=vdict(), spam=vdict()))
-for word in voc:
-    n_word_given_spam = av_vect.get("spam",0)
-    p_word_given_spam = (av_vect["spam"].get(word,0) + alpha) / (avg_len["spam"]["avg"] + alpha*n_vocabulary)
-    parameters["spam"] += vdict( { word :  p_word_given_spam })
-    
-    n_word_given_ham = av_vect.get("ham",0)
-    p_word_given_ham = (av_vect["ham"].get(word,0) + alpha) / (avg_len["ham"]["avg"] + alpha*n_vocabulary)
-    parameters["ham"] += vdict( { word :  p_word_given_ham })
 
 path_to_config= os.path.expanduser("~/.trollometre.vect.json")
 settings = load(open(path_to_config))
 blacklist = set(settings["blacklist"])
 
 
-settings = dict(ham_spam = parameters)
+settings = dict(ham_spam = av_vect)
 cur.execute("select distinct((post::json#>'{author,handle}')::text) from posts where is_spam=true");
 while res := cur.fetchone():
     blacklist |= set([res[0][1:-1]])
 
 
-settings = dict(ham_spam = parameters, blacklist = list(blacklist))
+settings = dict(ham_spam = av_vect, blacklist = list(blacklist))
 
 with open(path_to_config, 'w') as f:
     dump(settings, f)
 
 
-def is_a_spam2(post):
-    vtext = parse(post)
-    if "SPAM" in vtext or not vtext:
-        return True
-    return vtext.cos(parameters["spam"]) > vtext.cos(parameters["ham"])
 
-
-ratio_detection = vdict()
-cur.execute("select post, is_spam from posts where is_spam is not NULL");
-while res := cur.fetchone():
-    post, is_spam = res
-
-    if post["record"]["text"]:
-        text = parse(post)
-
-
-        if abs(text):
-            spammy= is_a_spam2(post)
-            ratio_detection += vdict({["ham","spam"][ is_spam]: vdict({["ham", "spam"][spammy] :1 })})
-            if is_spam and not spammy:
-                print("wrong spam")
-                print(text)
-                print(post["uri"])
-            if not is_spam and spammy:
-                print("wrong ham")
-                print(text)
-                print(post["uri"])
-
-print(ratio_detection)
+#ratio_detection = vdict()
+#cur.execute("select post, is_spam from posts where is_spam is not NULL");
+#while res := cur.fetchone():
+#    post, is_spam = res
+#
+#    if post["record"]["text"]:
+#        text = parse(post)
+#
+#
+#        if abs(text):
+#            spammy= is_a_spam2(post)
+#            ratio_detection += vdict({["ham","spam"][ is_spam]: vdict({["ham", "spam"][spammy] :1 })})
+#            if is_spam and not spammy:
+#                print("wrong spam")
+#                print(text)
+#                print(post["uri"])
+#            if not is_spam and spammy:
+#                print("wrong ham")
+#                print(text)
+#                print(post["uri"])
+#
+#print(ratio_detection)

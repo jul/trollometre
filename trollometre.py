@@ -236,11 +236,12 @@ class SpamError(Exception):
     pass
 nb_not_fr=0
 nb_block = 0
+nb_repost_fr=0
 last= dict()
 last_step=time()
 def on_message_handler(message):
     commit = parse_subscribe_repos_message(message)
-    global counter, evicted,nb_fr,nb_spam, bsc, j, nb_not_fr, last_step, last, blacklist, nb_block
+    global counter, evicted,nb_fr,nb_repost_fr, nb_spam, bsc, j, nb_not_fr, last_step, last, blacklist, nb_block
     if not isinstance(commit, models.ComAtprotoSyncSubscribeRepos.Commit):
         return
     car = CAR.from_bytes(commit.blocks)
@@ -248,8 +249,45 @@ def on_message_handler(message):
         if op.action in ["create"] and op.cid:
             raw = car.blocks.get(op.cid)
             cooked = get_or_create(raw, strict=False)
-            if cooked and cooked.py_type == "app.bsky.feed.post":
 
+            if cooked and cooked.py_type in { "app.bsky.feed.repost" }:
+### DRY
+                toprint=""
+                try:
+                    uri = raw["subject"]["uri"]
+                    toprint = raw = bsc.get_posts([uri])
+                    post = raw = raw.posts[0]
+                    if "market" in raw["author"]["handle"] or "yuno-wov" in raw["author"]["handle"] or "vulve" in raw["author"]["handle"] or raw["author"]["handle"] in blacklist:
+                        raise SpamError(f"spam in {raw['author'].handle}")
+
+                    #from pdb import set_trace;set_trace()
+                    if post.record.langs and set(post.record.langs) & {'fr',}:
+                        nb_repost_fr+=1
+                        dbg("r")
+                        if uri not in evicted:
+                            counter += mdict({uri : 1 })
+                            scorer_fr[uri] = post.like_count+post.repost_count+post.quote_count+post.reply_count
+                            last=dict({ uri : post.like_count+post.repost_count+post.quote_count+post.reply_count})
+
+                    else:
+                        scorer[uri] = post.like_count+post.repost_count+post.quote_count+post.reply_count
+
+                except IndexError:
+                    dbg("b")
+                    nb_repost_fr+=1
+                    pass
+
+                except KeyError:
+                    print(raw)
+                    pass
+                except SpamError:
+                    dbg('%')
+                    nb_repost_fr+=1
+
+                except Exception as e:
+                    dbg(e)
+            if cooked and cooked.py_type in { "app.bsky.feed.post" }:
+### DRY
                 toprint=""
                 try:
                     uri = raw["reply"]["root"]["uri"]
@@ -271,6 +309,7 @@ def on_message_handler(message):
                         scorer[uri] = post.like_count+post.repost_count+post.quote_count+post.reply_count
                         nb_not_fr+=1
                 except IndexError:
+
                     dbg("-")
                     nb_block+=1
                     pass
@@ -286,14 +325,15 @@ def on_message_handler(message):
                 # TIME
                 if time() - last_step > 300:
                     j+=1
-                    dbg(nb_fr)
+                    dbg(nb_fr+nb_repost_fr)
                     with open(os.path.expanduser("~/trollometre.csv"), "a") as f:
-                        f.write(f"{int(time())},{nb_fr},{nb_not_fr},{nb_spam},{nb_block}\n")
+                        f.write(f"{int(time())},{nb_fr},{nb_not_fr},{nb_spam},{nb_block},{nb_repost_fr}\n")
                     save_settings()
                     nb_fr=0
                     nb_spam=0
                     nb_block=0
                     nb_not_fr=0
+                    nb_repost_fr=0
                     mydict = ( scorer_fr, scorer_fr, scorer_fr, scorer_fr, scorer_fr, scorer_fr, scorer_fr,)[j%7]
                     picked = False
                     while not picked and { k:v for k, v in mydict.items() if k not in evicted }:
@@ -301,7 +341,7 @@ def on_message_handler(message):
                         for p in sorted({ k:v for k, v in mydict.items() if k not in evicted }.items(),
                             key=lambda x : x[1] )[::-1][0:1]:
 ## SCORE
-                            if mydict[p[0]]<110:
+                            if mydict[p[0]]<120:
                                 picked = True
                                 break
 
