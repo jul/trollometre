@@ -14,7 +14,7 @@ input_file = os.path.expanduser("~/trollometre.csv")
 
 data = pd.read_csv(input_file,names=['timestamp', 'posts', 'todel', 'spam', 'block', 'repost'], header=None)
 #data = pd.read_csv(input_file,names=['timestamp', 'posts'])
-data = data[data.timestamp > int(time()) - 2 * 24 * 3600  ]
+data = data[data.timestamp > int(time()) - 4 * 24 * 3600  ]
 
 time = data["timestamp"].apply(dt.datetime.fromtimestamp)
 #from pdb import set_trace; set_trace()
