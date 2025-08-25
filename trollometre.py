@@ -4,8 +4,9 @@
 from filelock import FileLock
 import os
 import sys
+import psycopg2 as sq
 from atproto_client.models import get_or_create
-
+import signal
 import requests
 
 from atproto_firehose import FirehoseSubscribeReposClient
@@ -155,7 +156,7 @@ bsc = Client()
 bsc.login(handle, password)
 
 
-def worker_main(message_queue, mesure_queue, cursor):
+def worker_main(message_queue, mesure_queue, cursor,score):
     global bsc
     path_to_config= os.path.expanduser("~/.trollometre.vect.json")
 
@@ -255,10 +256,9 @@ def worker_main(message_queue, mesure_queue, cursor):
     last_step=time() - (id(multiprocessing.current_process().name) %120) + 60
     dbg(f'time={last_step}/')
     from atproto_firehose import FirehoseSubscribeReposClient, parse_subscribe_repos_message
-    import psycopg2 as sq
+
     dbg("stated")
     # SCORE
-    score = 130
     con = sq.connect(dbname="trollo", user="jul")
     cur = con.cursor()
     evicted = set()
@@ -405,14 +405,9 @@ def worker_main(message_queue, mesure_queue, cursor):
                 for p in sorted({ k:v for k, v in mydict.items() if k not in evicted }.items(),
                     key=lambda x : x[1] )[::-1][0:1]:
 ## SCORE
-                    #cur.execute("select count(*) from posts where maybe_spam is false and  created_at BETWEEN  NOW() - interval '1d' AND NOW()")
-                    #in_last_day = cur.fetchone()[0]
-                    #if in_last_day > 110:
-                    #    score += 10
-                    #if in_last_day < 90:
-                    #    score -= 10
-                    #dbg(f"score {score}")
-                    if mydict[p[0]]<score:
+                    dbg(f"SCORE {score.value}")
+                    if mydict[p[0]]<score.value:
+
                         picked = True
                         break
 
@@ -474,7 +469,7 @@ def websocket_server(q):
     asyncio.run(main())
 
 def mesure_collector(mesure_queue):
-    import signal
+
     global all_mesure
     all_mesure=mdict(nb_fr=0, nb_not_fr=0, nb_spam=0, nb_block=0, nb_repost_fr=0)
 
@@ -510,16 +505,38 @@ workers_count = 5 # multiprocessing.cpu_count() * 2 - 1
 print(f"{workers_count} process started")
 message_queue = multiprocessing.Queue(maxsize=1000)
 start_cursor = None
-
+score = multiprocessing.Value('i',130)
 params = None
 cursor = multiprocessing.Value('i', 0)
 if start_cursor is not None:
     cursor = multiprocessing.Value('i', start_cursor)
     params = get_firehose_params(cursor)
 
+
+def score_setter(score):
+    con = sq.connect(dbname="trollo", user="jul")
+    cur = con.cursor()
+    def score_handler(signum, stack):
+        signal.alarm(1200)
+
+        cur.execute("select count(*) from posts where maybe_spam is false and  created_at BETWEEN  NOW() - interval '1d' AND NOW()")
+        in_last_day = cur.fetchone()[0]
+        if in_last_day > 110:
+            score.value += 1
+        if in_last_day < 90:
+            score.value -= 1
+        dbg(f"//score {score.value}")
+    signal.signal(signal.SIGALRM, score_handler)
+    signal.alarm(1200)
+    while 1:
+        sleep(10)
+        dbg(f"//sscore {score.value}")
+
+ss = Process(target=score_setter, args=(score,))
+ss.start()
 client = FirehoseSubscribeReposClient(params)
 
-pool = multiprocessing.Pool(workers_count, worker_main, ( message_queue,mesure_queue, cursor))
+pool = multiprocessing.Pool(workers_count, worker_main, ( message_queue,mesure_queue, cursor, score))
 
 mc = Process(target=mesure_collector, args =(mesure_queue,))
 mc.start()
@@ -547,3 +564,5 @@ pool.terminate()
 pool.join()
 mc.terminate()
 mc.join()
+ss.terminate()
+ss.join()
