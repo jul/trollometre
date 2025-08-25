@@ -23,6 +23,7 @@ q= Queue()
 
 lock_config = FileLock("config_trollo.txt")
 lock_out = FileLock("config_stdout.txt")
+lock_vect = FileLock("config_vect.txt")
 
 
 cfg = load(open(os.path.expanduser("~/.bluesky.json")))
@@ -30,16 +31,6 @@ handle = cfg["handle"]
 password= cfg["password"]
 def dbg(msg):
     sys.stdout.write(str(msg));sys.stdout.flush()
-
-path_to_config= os.path.expanduser("~/.trollometre.vect.json")
-
-settings = load(open(path_to_config))
-training_set = vdict(settings["ham_spam"])
-blacklist = set(settings["blacklist"])
-
-def save_settings():
-    with open(path_to_config, 'w') as f:
-        dump(dict(ham_spam = training_set,blacklist=list(blacklist)), f)
 
 
 
@@ -71,70 +62,6 @@ def return_stem(sentence):
     return [stemmer.stem(X.text) for X in doc if X.text not in stop_words]
 
 from emoji import is_emoji
-def parse(post, blacklist):
-    text = post["record"]["text"]
-    #from pdb import set_trace; set_trace()
-    if post["labels"]:
-        for i in post["labels"]:
-            if i["val"] == "porn":
-                blacklist |= set([post["author"]["handle"]])
-                dbg("is porn")
-                return vdict(SPAM=1)
-
-    if post["embed"]:
-        if "images" in post["embed"]:
-            for i in post["embed"]["images"]:
-                if not i["alt"]:
-                     text += " NO_ALT"
-                text += " " + i["alt"]
-        if "external" in post["embed"]:
-            text += " " + post["embed"]["external"]["title"]
-            text += " " + post["embed"]["external"]["description"]
-
-
-
-    res = vdict()
-    try:
-        if not post:
-            dbg("not post")
-            return vdict(SPAM=1)
-        if not detect(text) in {  "fr", "ca" }:
-            dbg("dtec" + detect(text))
-            return vdict()
-    except Exception as e:
-        dbg(e)
-        return res
-
-    if text:
-        res1 = map(return_stem, return_token_sent(text))
-        res2 = map(fcounter, res1)
-        res3 = sum(res2, vdict())
-        dbg(res3)
-        res = vdict(res3)
-        if len(res) < 10:
-            dbg("too short")
-            return vdict(SPAM = 1)
-    for w in text.split():
-        if w.startswith("#") or w.startswith("@"):
-            res+=vdict({w:1 })
-            if w.lower() in { "#nfsw",  "#vendrediseins", "#jeudipussy", "@ma-queue.com" , "@mon-cul.com", '#respectauxcréateurs' } or 'cum' in w.lower() or "orgasm" in w.lower() or "porn" in w.lower() or "coquin" in w.lower() or "salop" in w.lower() or "adult" in w.lower() or w.lower() in blacklist:
-                res+=vdict(SPAM=1)
-    for c in text:
-        if is_emoji(c):
-            res+=vdict({c:1 })
-    return res
-
-
-def is_a_spam(post, blacklist):
-    vtext = parse(post, blacklist)
-    if "SPAM" in vtext or not vtext:
-        dbg("SPAM in vtext?")
-        dbg("SPAM" in vtext)
-        return True
-    dbg(f"""c1 : {vtext.dot(training_set["spam"])}""")
-    dbg(f"""c2 {vtext.dot(training_set["ham"])}""")
-    return vtext.dot(training_set["spam"]) > vtext.dot(training_set["ham"])
-
 
 
 
@@ -230,12 +157,108 @@ bsc.login(handle, password)
 
 def worker_main(message_queue, mesure_queue, cursor):
     global bsc
+    path_to_config= os.path.expanduser("~/.trollometre.vect.json")
+
+    settings = load(open(path_to_config))
+    training_set = vdict(settings["ham_spam"])
+    blacklist = set(settings["blacklist"])
+    def is_a_spam(post, blacklist):
+        vtext = parse(post, blacklist)
+        if "SPAM" in vtext or not vtext:
+            dbg("SPAM in vtext?")
+            dbg("SPAM" in vtext)
+            return True
+        dbg(f"""c1 : {vtext.dot(training_set["spam"])}""")
+        dbg(f"""c2 {vtext.dot(training_set["ham"])}""")
+        return vtext.dot(training_set["spam"]) > vtext.dot(training_set["ham"])
+
+
+    def save_settings(blacklist=blacklist):
+        with open(path_to_config, 'w') as f:
+            dbg("saving..")
+            dump(dict(ham_spam = training_set,blacklist=list(blacklist)), f)
+
+    def update_black_list(local_blacklist):
+        with lock_vect:
+            dbg("updateing bl")
+            settings = load(open(path_to_config))
+            training_set = vdict(settings["ham_spam"])
+            dbg(f"lb{len(local_blacklist)}")
+            blacklist = set(settings["blacklist"]) | local_blacklist
+            dbg(f"lb{len(blacklist)}")
+            save_settings(blacklist)
+            return blacklist
+    def parse(post, blacklist):
+        text = post["record"]["text"]
+        #from pdb import set_trace; set_trace()
+        if post["labels"]:
+            for i in post["labels"]:
+                if i["val"] == "porn":
+                    dbg(f"lb{len(blacklist)}")
+                    blacklist |= {post["author"]["handle"], }
+                    dbg(f"lb{len(blacklist)}")
+
+                    dbg("UPBL")
+                    dbg(f"adding { post["author"]["handle"]}")
+                    blacklist = update_black_list(blacklist)
+
+                    dbg("is porn")
+                    return vdict(SPAM=1)
+
+        if post["embed"]:
+            if "images" in post["embed"]:
+                for i in post["embed"]["images"]:
+                    if not i["alt"]:
+                        text += " NO_ALT"
+                    text += " " + i["alt"]
+            if "external" in post["embed"]:
+                text += " " + post["embed"]["external"]["title"]
+                text += " " + post["embed"]["external"]["description"]
+
+
+
+        res = vdict()
+        try:
+            if not post:
+                dbg("not post")
+                return vdict(SPAM=1)
+            if not detect(text) in {  "fr", "ca" }:
+                dbg("dtec" + detect(text))
+                return vdict()
+        except Exception as e:
+            dbg(e)
+            return res
+
+        if text:
+            res1 = map(return_stem, return_token_sent(text))
+            res2 = map(fcounter, res1)
+            res3 = sum(res2, vdict())
+            dbg(res3)
+            res = vdict(res3)
+            if len(res) < 10:
+                dbg("too short")
+                return vdict(SPAM = 1)
+        for w in text.split():
+            if w.startswith("#") or w.startswith("@"):
+                res+=vdict({w:1 })
+                if w.lower() in { "#nfsw",  "#vendrediseins", "#jeudipussy", "@ma-queue.com" , "@mon-cul.com", '#respectauxcréateurs' } or 'cum' in w.lower() or "orgasm" in w.lower() or "porn" in w.lower() or "coquin" in w.lower() or "salop" in w.lower() or "adult" in w.lower() or w.lower() in blacklist:
+                    res+=vdict(SPAM=1)
+
+
+        for c in text:
+            if is_emoji(c):
+                res+=vdict({c:1 })
+        return res
+
+
+
     last_step=time() - (id(multiprocessing.current_process().name) %120) + 60
     dbg(f'time={last_step}/')
     from atproto_firehose import FirehoseSubscribeReposClient, parse_subscribe_repos_message
     import psycopg2 as sq
     dbg("stated")
-
+    # SCORE
+    score = 130
     con = sq.connect(dbname="trollo", user="jul")
     cur = con.cursor()
     evicted = set()
@@ -364,7 +387,6 @@ def worker_main(message_queue, mesure_queue, cursor):
             #dbg(nb_fr+nb_repost_fr)
             #with open(os.path.expanduser("~/trollometre.csv"), "a") as f:
             #    f.write(f"{int(time())},{nb_fr},{nb_not_fr},{nb_spam},{nb_block},{nb_repost_fr}\n")
-            save_settings()
             nb_fr=0
             nb_spam=0
             nb_block=0
@@ -383,7 +405,14 @@ def worker_main(message_queue, mesure_queue, cursor):
                 for p in sorted({ k:v for k, v in mydict.items() if k not in evicted }.items(),
                     key=lambda x : x[1] )[::-1][0:1]:
 ## SCORE
-                    if mydict[p[0]]<120:
+                    #cur.execute("select count(*) from posts where maybe_spam is false and  created_at BETWEEN  NOW() - interval '1d' AND NOW()")
+                    #in_last_day = cur.fetchone()[0]
+                    #if in_last_day > 110:
+                    #    score += 10
+                    #if in_last_day < 90:
+                    #    score -= 10
+                    #dbg(f"score {score}")
+                    if mydict[p[0]]<score:
                         picked = True
                         break
 
@@ -445,21 +474,29 @@ def websocket_server(q):
     asyncio.run(main())
 
 def mesure_collector(mesure_queue):
-    last_time = time()
+    import signal
+    global all_mesure
     all_mesure=mdict(nb_fr=0, nb_not_fr=0, nb_spam=0, nb_block=0, nb_repost_fr=0)
+
+    def handler(signum, stack):
+        signal.alarm(300)
+        global all_mesure
+        print(all_mesure, flush=True)
+
+        with open(os.path.expanduser("~/trollometre.csv"), "a") as f:
+            f.write(f"{int(time())},{all_mesure["nb_fr"]},{all_mesure["nb_not_fr"]},{all_mesure["nb_spam"]},{all_mesure["nb_block"]},{all_mesure["nb_repost_fr"]}\n")
+        dbg(f"({all_mesure["nb_repost_fr"]+all_mesure["nb_fr"]})")
+        all_mesure=mdict(nb_fr=0, nb_not_fr=0, nb_spam=0, nb_block=0, nb_repost_fr=0)
+
+
+    signal.signal(signal.SIGALRM, handler)
+    signal.alarm(295)
     print("started mesure collector")
     while mesure := mesure_queue.get():
         all_mesure += mdict(mesure)
 
 
-        if time() - last_time > 300:
-            last_time=time()
-            print(all_mesure, flush=True)
 
-            with open(os.path.expanduser("~/trollometre.csv"), "a") as f:
-                f.write(f"{int(time())},{all_mesure["nb_fr"]},{all_mesure["nb_not_fr"]},{all_mesure["nb_spam"]},{all_mesure["nb_block"]},{all_mesure["nb_repost_fr"]}\n")
-            dbg(f"({all_mesure["nb_repost_fr"]+all_mesure["nb_fr"]})")
-            all_mesure=mdict(nb_fr=0, nb_not_fr=0, nb_spam=0, nb_block=0, nb_repost_fr=0)
 
 
 mesure_queue = multiprocessing.Queue()
