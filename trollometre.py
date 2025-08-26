@@ -526,8 +526,11 @@ def score_setter(score):
     cur = con.cursor()
     def score_handler(signum, stack):
         signal.alarm(1200)
+        cur.execute("select statement_timestamp() - interval '1d', statement_timestamp()")
+        yesterday, now = cur.fetchone()
+        dbg(f"{now}::{yesterday}")
 
-        cur.execute("select count(*) from posts where maybe_spam is false and  created_at BETWEEN  NOW() - interval '1d' AND NOW()")
+        cur.execute("select count(*) from posts where maybe_spam is false and  created_at BETWEEN  statement_timestamp() - interval '1d' AND statement_timestamp()")
         in_last_day = cur.fetchone()[0]
         dbg(f'in_last_day {in_last_day}')
         if in_last_day > 115:
