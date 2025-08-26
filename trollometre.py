@@ -44,6 +44,109 @@ stemmer = SnowballStemmer(language='french')
 
 stop_words = set(stopwords.words('french')) | {',', ':', '#', '-', '\n', '\n\n', '.', '!', '(', ')',  }
 
+
+path_to_config= os.path.expanduser("~/.trollometre.vect.json")
+
+settings = load(open(path_to_config))
+training_set = vdict(settings["ham_spam"])
+blacklist = set(settings["blacklist"])
+score = multiprocessing.Value('i',settings.get("score",125))
+
+def is_a_spam(post, blacklist):
+    vtext = parse(post, blacklist)
+    if "SPAM" in vtext or not vtext:
+        dbg("SPAM in vtext?")
+        dbg("SPAM" in vtext)
+        return True
+    dbg(f"""c1 : {vtext.dot(training_set["spam"])}""")
+    dbg(f"""c2 {vtext.dot(training_set["ham"])}""")
+    return vtext.dot(training_set["spam"]) > vtext.dot(training_set["ham"])
+
+
+def save_settings(blacklist=blacklist):
+    with open(path_to_config, 'w') as f:
+        dbg("saving..")
+        dump(dict(ham_spam = training_set,blacklist=list(blacklist), score=score.value), f)
+
+def update_black_list(local_blacklist):
+    with lock_vect:
+        dbg("updateing bl")
+        settings = load(open(path_to_config))
+        training_set = vdict(settings["ham_spam"])
+        dbg(f"lb{len(local_blacklist)}")
+        blacklist = set(settings["blacklist"]) | local_blacklist
+        dbg(f"lb{len(blacklist)}")
+        save_settings(blacklist)
+        return blacklist
+def update_score():
+    with lock_vect:
+        settings = load(open(path_to_config))
+        settings["score"] = score.value
+        with open(path_to_config, 'w') as f:
+            dbg("saving..")
+            dump(settings, f)
+
+
+def parse(post, blacklist):
+    text = post["record"]["text"]
+    #from pdb import set_trace; set_trace()
+    if post["labels"]:
+        for i in post["labels"]:
+            if i["val"] == "porn":
+                dbg(f"lb{len(blacklist)}")
+                blacklist |= {post["author"]["handle"], }
+                dbg(f"lb{len(blacklist)}")
+
+                dbg("UPBL")
+                dbg(f"adding { post["author"]["handle"]}")
+                blacklist = update_black_list(blacklist)
+
+                dbg("is porn")
+                return vdict(SPAM=1)
+    if post["embed"]:
+        if "images" in post["embed"]:
+            for i in post["embed"]["images"]:
+                if not i["alt"]:
+                    text += " NO_ALT"
+                text += " " + i["alt"]
+        if "external" in post["embed"]:
+            text += " " + post["embed"]["external"]["title"]
+            text += " " + post["embed"]["external"]["description"]
+
+
+
+    res = vdict()
+    try:
+        if not post:
+            dbg("not post")
+            return vdict(SPAM=1)
+        if not detect(text) in {  "fr", "ca" }:
+            dbg("dtec" + detect(text))
+            return vdict()
+    except Exception as e:
+        dbg(e)
+        return res
+
+    if text:
+        res = sum(map(fcounter,map(return_stem, return_token_sent(text))), vdict())
+        dbg(res)
+        if len(res) < 10:
+            dbg("too short")
+            return vdict(SPAM = 1)
+    for w in text.split():
+        if w.startswith("#") or w.startswith("@"):
+            res+=vdict({w:1 })
+            if w.lower() in { "#nfsw",  "#vendrediseins", "#jeudipussy", "@ma-queue.com" , "@mon-cul.com", '#respectauxcréateurs' } or 'cum' in w.lower() or "orgasm" in w.lower() or "porn" in w.lower() or "coquin" in w.lower() or "salop" in w.lower() or "adult" in w.lower() or w.lower() in blacklist:
+                res+=vdict(SPAM=1)
+
+
+    for c in text:
+        if is_emoji(c):
+            res+=vdict({c:1 })
+    return res
+
+
+
 nlp = spacy.load("fr_core_news_sm")
 def fcounter(list_of_words):
     res = vdict({})
@@ -51,7 +154,6 @@ def fcounter(list_of_words):
         res += vdict({ i : 1 })
     return res
 
-print(fcounter(['a','a', 'b']))
 def return_token_sent(sentence):
     # Tokeniser la phrase
     doc = nlp(sentence)
@@ -158,98 +260,6 @@ bsc.login(handle, password)
 
 def worker_main(message_queue, mesure_queue, cursor,score):
     global bsc
-    path_to_config= os.path.expanduser("~/.trollometre.vect.json")
-
-    settings = load(open(path_to_config))
-    training_set = vdict(settings["ham_spam"])
-    blacklist = set(settings["blacklist"])
-    def is_a_spam(post, blacklist):
-        vtext = parse(post, blacklist)
-        if "SPAM" in vtext or not vtext:
-            dbg("SPAM in vtext?")
-            dbg("SPAM" in vtext)
-            return True
-        dbg(f"""c1 : {vtext.dot(training_set["spam"])}""")
-        dbg(f"""c2 {vtext.dot(training_set["ham"])}""")
-        return vtext.dot(training_set["spam"]) > vtext.dot(training_set["ham"])
-
-
-    def save_settings(blacklist=blacklist):
-        with open(path_to_config, 'w') as f:
-            dbg("saving..")
-            dump(dict(ham_spam = training_set,blacklist=list(blacklist)), f)
-
-    def update_black_list(local_blacklist):
-        with lock_vect:
-            dbg("updateing bl")
-            settings = load(open(path_to_config))
-            training_set = vdict(settings["ham_spam"])
-            dbg(f"lb{len(local_blacklist)}")
-            blacklist = set(settings["blacklist"]) | local_blacklist
-            dbg(f"lb{len(blacklist)}")
-            save_settings(blacklist)
-            return blacklist
-    def parse(post, blacklist):
-        text = post["record"]["text"]
-        #from pdb import set_trace; set_trace()
-        if post["labels"]:
-            for i in post["labels"]:
-                if i["val"] == "porn":
-                    dbg(f"lb{len(blacklist)}")
-                    blacklist |= {post["author"]["handle"], }
-                    dbg(f"lb{len(blacklist)}")
-
-                    dbg("UPBL")
-                    dbg(f"adding { post["author"]["handle"]}")
-                    blacklist = update_black_list(blacklist)
-
-                    dbg("is porn")
-                    return vdict(SPAM=1)
-
-        if post["embed"]:
-            if "images" in post["embed"]:
-                for i in post["embed"]["images"]:
-                    if not i["alt"]:
-                        text += " NO_ALT"
-                    text += " " + i["alt"]
-            if "external" in post["embed"]:
-                text += " " + post["embed"]["external"]["title"]
-                text += " " + post["embed"]["external"]["description"]
-
-
-
-        res = vdict()
-        try:
-            if not post:
-                dbg("not post")
-                return vdict(SPAM=1)
-            if not detect(text) in {  "fr", "ca" }:
-                dbg("dtec" + detect(text))
-                return vdict()
-        except Exception as e:
-            dbg(e)
-            return res
-
-        if text:
-            res1 = map(return_stem, return_token_sent(text))
-            res2 = map(fcounter, res1)
-            res3 = sum(res2, vdict())
-            dbg(res3)
-            res = vdict(res3)
-            if len(res) < 10:
-                dbg("too short")
-                return vdict(SPAM = 1)
-        for w in text.split():
-            if w.startswith("#") or w.startswith("@"):
-                res+=vdict({w:1 })
-                if w.lower() in { "#nfsw",  "#vendrediseins", "#jeudipussy", "@ma-queue.com" , "@mon-cul.com", '#respectauxcréateurs' } or 'cum' in w.lower() or "orgasm" in w.lower() or "porn" in w.lower() or "coquin" in w.lower() or "salop" in w.lower() or "adult" in w.lower() or w.lower() in blacklist:
-                    res+=vdict(SPAM=1)
-
-
-        for c in text:
-            if is_emoji(c):
-                res+=vdict({c:1 })
-        return res
 
 
 
@@ -405,7 +415,6 @@ def worker_main(message_queue, mesure_queue, cursor,score):
                 for p in sorted({ k:v for k, v in mydict.items() if k not in evicted }.items(),
                     key=lambda x : x[1] )[::-1][0:1]:
 ## SCORE
-                    dbg(f"SCORE {score.value}")
                     if mydict[p[0]]<score.value:
 
                         picked = True
@@ -505,7 +514,6 @@ workers_count = 5 # multiprocessing.cpu_count() * 2 - 1
 print(f"{workers_count} process started")
 message_queue = multiprocessing.Queue(maxsize=1000)
 start_cursor = None
-score = multiprocessing.Value('i',130)
 params = None
 cursor = multiprocessing.Value('i', 0)
 if start_cursor is not None:
@@ -521,16 +529,18 @@ def score_setter(score):
 
         cur.execute("select count(*) from posts where maybe_spam is false and  created_at BETWEEN  NOW() - interval '1d' AND NOW()")
         in_last_day = cur.fetchone()[0]
-        if in_last_day > 110:
+        dbg(f'in_last_day {in_last_day}')
+        if in_last_day > 115:
             score.value += 1
-        if in_last_day < 90:
+        if in_last_day < 105:
             score.value -= 1
-        dbg(f"//score {score.value}")
+        update_score()
+
+        dbg(f"//SCORE {score.value}")
     signal.signal(signal.SIGALRM, score_handler)
     signal.alarm(1200)
     while 1:
-        sleep(10)
-        dbg(f"//sscore {score.value}")
+        sleep(100)
 
 ss = Process(target=score_setter, args=(score,))
 ss.start()

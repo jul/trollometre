@@ -153,7 +153,7 @@ while res := cur.fetchone():
     blacklist |= set([res[0][1:-1]])
 
 
-settings = dict(ham_spam = av_vect, blacklist = list(blacklist))
+settings = dict(ham_spam = av_vect, blacklist = list(blacklist), score=settings['score'])
 
 with open(path_to_config, 'w') as f:
     dump(settings, f)

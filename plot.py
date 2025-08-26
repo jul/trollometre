@@ -14,14 +14,13 @@ input_file = os.path.expanduser("~/trollometre.csv")
 
 data = pd.read_csv(input_file,names=['timestamp', 'posts', 'todel', 'spam', 'block', 'repost'], header=None)
 #data = pd.read_csv(input_file,names=['timestamp', 'posts'])
-data = data[data.timestamp > int(time()) - 2 * 24 * 3600  ]
+data = data[data.timestamp > int(time()) - 1 * 24 * 3600  ]
 
 
 time = data["timestamp"].apply(dt.datetime.fromtimestamp)
 #from pdb import set_trace; set_trace()
 delta = (-data["timestamp"].shift(1)+data["timestamp"])
 delta[delta<300] = 300
-print(delta.min())
 #ax.plot(time[1:], data["posts"][1:]/delta[1:]) 
 
 ax.stackplot(time[1:], (data["spam"]/delta)[1:], (data["block"]/delta)[1:], (data["posts"]/delta)[1:], labels=['spams', 'block', 'posts'])
