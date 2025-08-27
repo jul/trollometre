@@ -538,7 +538,8 @@ def score_setter(score):
         if in_last_day < 105:
             score.value -= 1
         update_score()
-
+        with open(os.path.expanduser("~/trolloscore.csv"), "a") as f:
+            f.write(f"{int(time())},{score.value},{in_last_day}\n")
         dbg(f"//SCORE {score.value}")
     signal.signal(signal.SIGALRM, score_handler)
     signal.alarm(1200)
