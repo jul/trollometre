@@ -312,12 +312,14 @@ def worker_main(message_queue, mesure_queue, cursor,score):
                         if uri in scorer_fr:
                             scorer_fr[uri] += 1
                             dbg("r" if cooked.py_type in { "app.bsky.feed.repost" } else "l")
+                            mesure+=mdict({ "repost" if cooked.py_type in { "app.bsky.feed.repost" } else "like" : 1 })
+
                     except KeyError:
                         dbg(raw)
                         pass
                     except SpamError:
                         dbg('%')
-                        mesure+=mdict(nb_repost_fr=1)
+                        mesure+=mdict(repost=1)
 
                     except Exception as e:
                         dbg(e)
@@ -456,7 +458,7 @@ def websocket_server(q):
 def mesure_collector(mesure_queue):
 
     global all_mesure
-    all_mesure=mdict(nb_fr=0, nb_not_fr=0, nb_spam=0, nb_block=0, nb_repost_fr=0)
+    all_mesure=mdict(nb_fr=0, nb_not_fr=0, nb_spam=0, nb_block=0, nb_repost_fr=0,repost=0, like=0)
 
     def handler(signum, stack):
         signal.alarm(300)
@@ -464,9 +466,9 @@ def mesure_collector(mesure_queue):
         print(all_mesure, flush=True)
 
         with open(os.path.expanduser("~/trollometre.csv"), "a") as f:
-            f.write(f"{int(time())},{all_mesure["nb_fr"]},{all_mesure["nb_not_fr"]},{all_mesure["nb_spam"]},{all_mesure["nb_block"]},{all_mesure["nb_repost_fr"]}\n")
-        dbg(f"({all_mesure["nb_repost_fr"]+all_mesure["nb_fr"]})")
-        all_mesure=mdict(nb_fr=0, nb_not_fr=0, nb_spam=0, nb_block=0, nb_repost_fr=0)
+            f.write(f"{int(time())},{all_mesure["nb_fr"]},{all_mesure["nb_not_fr"]},{all_mesure["nb_spam"]},{all_mesure["nb_block"]},{all_mesure["repost"]},{all_mesure["like"]}\n")
+        dbg(f"({all_mesure["repost"]+all_mesure["nb_fr"]+all_mesure["like"]})")
+        all_mesure=mdict(nb_fr=0, nb_not_fr=0, nb_spam=0, nb_block=0, nb_repost_fr=0,repost=0, like=0)
 
 
     signal.signal(signal.SIGALRM, handler)
@@ -486,7 +488,7 @@ p = Process(target=websocket_server, args =(q,))
 p.start()
 
 
-workers_count = 5 # multiprocessing.cpu_count() * 2 - 1
+workers_count = 4 # multiprocessing.cpu_count() * 2 - 1
 print(f"{workers_count} process started")
 message_queue = multiprocessing.Queue(maxsize=1000)
 start_cursor = None
