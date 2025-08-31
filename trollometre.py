@@ -304,53 +304,29 @@ def worker_main(message_queue, mesure_queue, cursor,score):
                 raw = car.blocks.get(op.cid)
                 cooked = get_or_create(raw, strict=False)
                 root_uri = AtUri.from_str(f'at://{commit.repo}/{op.path}')
-                if cooked and cooked.py_type in { "app.bsky.feed.post"}:
 
-                    if "langs" in raw and not set(raw["langs"]) & {'fr',}:
+#
+                if cooked and cooked.py_type in { "app.bsky.feed.repost","app.bsky.feed.like" }:
+                    try:
+                        uri = raw["subject"]["uri"]
+                        if uri in scorer_fr:
+                            scorer_fr[uri] += 1
+                            dbg("r" if cooked.py_type in { "app.bsky.feed.repost" } else "l")
+                    except KeyError:
+                        dbg(raw)
+                        pass
+                    except SpamError:
+                        dbg('%')
+                        mesure+=mdict(nb_repost_fr=1)
 
-                        mesure+=mdict(nb_not_fr=1)
-                        continue
-#
-#                if cooked and cooked.py_type in { "app.bsky.feed.repost" }:
-    ### DRY
-#                    toprint=""
-#                    try:
-#                        uri = raw["subject"]["uri"]
-#                        toprint = raw
-#                        if root_uri != uri:
-#                            toprint = raw = bsc.get_posts([uri])
-#                        post = raw = raw.posts[0]
-#                        if "market" in raw["author"]["handle"] or "yuno-wov" in raw["author"]["handle"] or "vulve" in raw["author"]["handle"] or raw["author"]#["handle"] in blacklist:
-             #               raise SpamError(f"spam in {raw['author'].handle}")
-
-                        #from pdb import set_trace;set_trace()
-             #           if post.record.langs and set(post.record.langs) & {'fr',}:
-             #               mesure+=mdict(nb_repost_fr=1)
-             #               # dbg("r")
-             #               if uri not in evicted:
-             #                   scorer_fr[uri] = post.like_count+post.repost_count+post.quote_count+post.reply_count
-             #                   last=dict({ uri : post.like_count+post.repost_count+post.quote_count+post.reply_count})
-#
-#                        else:
-#                            scorer[uri] = post.like_count+post.repost_count+post.quote_count+post.reply_count
-#
-#                    except IndexError:
-#                        dbg("b")
-#                        mesure+=mdict(nb_repost_fr=1)
-#                        pass
-#
-#                    except KeyError:
-#                        dbg(raw)
-#                        pass
-#                    except SpamError:
-#                        dbg('%')
-#                        mesure+=mdict(nb_repost_fr=1)
-
-#                    except Exception as e:
-#                        dbg(e)
+                    except Exception as e:
+                        dbg(e)
 
                 if cooked and cooked.py_type in { "app.bsky.feed.post" }:
-    ### DRY
+                    if "langs" in raw and not set(raw["langs"]) & {'fr',}:
+                        mesure+=mdict(nb_not_fr=1)
+                        continue
+
                     toprint=""
                     try:
                         uri = raw["reply"]["root"]["uri"]
@@ -530,7 +506,7 @@ def score_setter(score):
         yesterday, now = cur.fetchone()
         dbg(f"{now}::{yesterday}")
 
-        cur.execute("select count(*) from posts where maybe_spam is false and  created_at BETWEEN  statement_timestamp() - interval '1d' AND statement_timestamp()")
+        cur.execute("select count(*) from posts where maybe_spam is false and is_spam is not true and  created_at BETWEEN  statement_timestamp() - interval '1d' AND statement_timestamp()")
         in_last_day = cur.fetchone()[0]
         dbg(f'in_last_day {in_last_day}')
         if in_last_day > 115:
