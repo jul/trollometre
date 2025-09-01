@@ -251,7 +251,6 @@ class SpamError(Exception):
 nb_not_fr=0
 nb_block = 0
 nb_repost_fr=0
-last= dict()
 from atproto import CAR, models, Client, client_utils, AtUri
 
 bsc = Client()
@@ -292,7 +291,6 @@ def worker_main(message_queue, mesure_queue, cursor,score):
 
         if not commit.blocks:
             continue
-        commit = parse_subscribe_repos_message(message)
         mesure = mdict()
         if not isinstance(commit, models.ComAtprotoSyncSubscribeRepos.Commit):
             debug("wtf")
@@ -313,13 +311,19 @@ def worker_main(message_queue, mesure_queue, cursor,score):
                             scorer_fr[uri] += 1
                             dbg("r" if cooked.py_type in { "app.bsky.feed.repost" } else "l")
                             mesure+=mdict({ "repost" if cooked.py_type in { "app.bsky.feed.repost" } else "like" : 1 })
+                            if uri not in evicted and cooked.py_type == "app.bsky.feed.repost":
+                                toprint = raw = bsc.get_posts([uri])
+                                post = raw = raw.posts[0]
+                                if "market" in raw["author"]["handle"] or "yuno-wov" in raw["author"]["handle"] or "vulve" in raw["author"]["handle"] or raw["author"]["handle"] in blacklist:
+                                    raise SpamError(f"spam in {raw['author'].handle}")
+                                scorer_fr[uri] = post.like_count+post.repost_count+post.quote_count+post.reply_count
+
 
                     except KeyError:
                         dbg(raw)
                         pass
                     except SpamError:
                         dbg('%')
-                        mesure+=mdict(repost=1)
 
                     except Exception as e:
                         dbg(e)
@@ -346,7 +350,6 @@ def worker_main(message_queue, mesure_queue, cursor,score):
                             dbg(".")
                             if uri not in evicted:
                                 scorer_fr[uri] = post.like_count+post.repost_count+post.quote_count+post.reply_count
-                                last=dict({ uri : post.like_count+post.repost_count+post.quote_count+post.reply_count})
 
                         else:
                             scorer[uri] = post.like_count+post.repost_count+post.quote_count+post.reply_count
@@ -488,7 +491,7 @@ p = Process(target=websocket_server, args =(q,))
 p.start()
 
 
-workers_count = 4 # multiprocessing.cpu_count() * 2 - 1
+workers_count = 5 # multiprocessing.cpu_count() * 2 - 1
 print(f"{workers_count} process started")
 message_queue = multiprocessing.Queue(maxsize=1000)
 start_cursor = None

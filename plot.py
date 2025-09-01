@@ -12,9 +12,9 @@ ax = fig.add_subplot(111)
 input_file = os.path.expanduser("~/trollometre.csv")
 #input_file = "this"
 
-data = pd.read_csv(input_file,names=['timestamp', 'posts', 'todel', 'spam', 'block', 'repost'], header=None)
+data = pd.read_csv(input_file,names=['timestamp', 'posts', 'todel', 'spam', 'block' ], usecols=range(5), header=None)
 #data = pd.read_csv(input_file,names=['timestamp', 'posts'])
-data = data[data.timestamp > int(time()) - 4 * 24 * 3600  ]
+data = data[data.timestamp > int(time()) - 14 * 24 * 3600  ]
 
 
 time = data["timestamp"].apply(dt.datetime.fromtimestamp)

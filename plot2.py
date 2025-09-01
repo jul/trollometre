@@ -23,7 +23,7 @@ res = cur.execute("""
         sum(score)/count(*) as average,
         count(*) from posts, date
     where maybe_spam is false and is_spam is not true and
-    created_at BETWEEN  date.d::timestamp - interval '1d' and date.d
+    created_at BETWEEN  date.d::timestamp - interval '24h' and date.d
     group by date.d order by date.d asc;
 
 """)
@@ -32,20 +32,20 @@ data2 = pd.DataFrame(cur.fetchall())
 data2.columns = [ "timestamp", "min", "median", "up_tier", "average", "count" ]
 input_file = os.path.expanduser("~/trolloscore.csv")
 #input_file = "this"
-
 data = pd.read_csv(input_file,names=['timestamp', 'score', 'cumul'], header=None)
 #data = pd.read_csv(input_file,names=['timestamp', 'posts'])
 
-data = data[data.timestamp > int(time()) - 5 * 24 * 3600  ]
+nb_day = 10
+data = data[data.timestamp > int(time()) - nb_day * 24 * 3600  ]
 time2 = data2.timestamp.apply(lambda e : e.timestamp() )
-data2 = data2[time2 > int(time()) - 5 * 24 * 3600  ]
+data2 = data2[time2 > int(time()) - nb_day * 24 * 3600  ]
 
 time = data["timestamp"].apply(dt.datetime.fromtimestamp)
 #from pdb import set_trace; set_trace()
 ax.plot(time, data["score"], label = ["score passe haut"])
 ax.plot(time, data["cumul"], label = ["repost des 24 dernières heures"]) 
-ax.plot(data2.timestamp, data2["median"], label = [ "score median observé"])
-ax.plot(data2.timestamp, data2["average"], label = [ "score moyen observé"])
+ax.plot(data2.timestamp, data2["median"], label = [ "score median observé sur 24h "])
+ax.plot(data2.timestamp, data2["average"], label = [ "score moyen observé sur 24h"])
 from time import time
 plt.axhline( 105, color= "green")
 plt.axhline( 115, color="green")
