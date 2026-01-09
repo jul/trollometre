@@ -15,31 +15,39 @@ from archery import mdict, vdict
 from time import time, sleep
 import re
 from json import load, dumps, loads, dump
-# import trio as asyncio
-#import asyncio
+import asyncio
 from websockets.asyncio.server import serve
 from multiprocessing import Process, Queue
 import multiprocessing
+import spacy
+from langdetect import detect
+from nltk.corpus import stopwords
+from nltk.stem.snowball import SnowballStemmer
+from emoji import is_emoji
+from atproto import CAR, models, Client, client_utils, AtUri
+
+### globals and initialiaztion
+
+nb_not_fr=0
+nb_block = 0
+nb_repost_fr=0
+
 q= Queue()
 
 lock_config = FileLock("config_trollo.txt")
 lock_out = FileLock("config_stdout.txt")
 lock_vect = FileLock("config_vect.txt")
+nlp = spacy.load("fr_core_news_sm")
 
 
 cfg = load(open(os.path.expanduser("~/.bluesky.json")))
+
 handle = cfg["handle"]
 password= cfg["password"]
+
 def dbg(msg):
     sys.stdout.write(str(msg));sys.stdout.flush()
 
-
-
-
-import spacy
-from langdetect import detect
-from nltk.corpus import stopwords
-from nltk.stem.snowball import SnowballStemmer
 stemmer = SnowballStemmer(language='french')
 
 stop_words = set(stopwords.words('french')) | {',', ':', '#', '-', '\n', '\n\n', '.', '!', '(', ')',  }
@@ -78,6 +86,7 @@ def update_black_list(local_blacklist):
         dbg(f"lb{len(blacklist)}")
         save_settings(blacklist)
         return blacklist
+
 def update_score():
     with lock_vect:
         settings = load(open(path_to_config))
@@ -113,8 +122,6 @@ def parse(post, blacklist):
             text += " " + post["embed"]["external"]["title"]
             text += " " + post["embed"]["external"]["description"]
 
-
-
     res = vdict()
     try:
         if not post:
@@ -136,10 +143,13 @@ def parse(post, blacklist):
     for w in text.split():
         if w.startswith("#") or w.startswith("@"):
             res+=vdict({w:1 })
-            if w.lower() in { "#nfsw",  "#vendrediseins", "#jeudipussy", "@ma-queue.com" , "@mon-cul.com", '#respectauxcréateurs' } or 'cum' in w.lower() or "orgasm" in w.lower() or "porn" in w.lower() or "coquin" in w.lower() or "salop" in w.lower() or "adult" in w.lower() or w.lower() in blacklist:
+            # outdated hardcoded values
+            if w.lower() in { "#nfsw", "#vendrediseins", "#jeudipussy", "@ma-queue.com",
+                "@mon-cul.com", '#respectauxcréateurs' } or 'cum' in w.lower() \
+                    or "orgasm" in w.lower() or "porn" in w.lower() \
+                        or "coquin" in w.lower() or "salop" in w.lower() \
+                            or "adult" in w.lower() or w.lower() in blacklist:
                 res+=vdict(SPAM=1)
-
-
     for c in text:
         if is_emoji(c):
             res+=vdict({c:1 })
@@ -147,7 +157,7 @@ def parse(post, blacklist):
 
 
 
-nlp = spacy.load("fr_core_news_sm")
+
 def fcounter(list_of_words):
     res = vdict({})
     for i in list_of_words:
@@ -164,7 +174,6 @@ def return_stem(sentence):
     doc = nlp(sentence)
     return [stemmer.stem(X.text) for X in doc if X.text not in stop_words]
 
-from emoji import is_emoji
 
 
 
@@ -176,9 +185,6 @@ at=dict()
 nb_fr=0
 nb_spam=0
 j=0
-
-
-
 
 def repost_root_refs(bsc,parent_uri: str) :
     _,_,did,collection, rkey = parent_uri.split("/")
@@ -225,8 +231,6 @@ def get_root_refs(bsc, parent_uri: str, text : str) :
         }
 
 
-
-
 def send_post(bsc, payload):
     pds_url = "https://bsky.social"
     resp = requests.post(
@@ -242,32 +246,21 @@ def send_post(bsc, payload):
 def get_firehose_params(cursor_value: multiprocessing.Value) -> models.ComAtprotoSyncSubscribeRepos.Params:
     return models.ComAtprotoSyncSubscribeRepos.Params(cursor=cursor_value.value)
 
-# all of this undocumented horseshit is based on cargo-culting the bollocks out of
-# https://github.com/MarshalX/atproto/blob/main/examples/firehose/sub_repos.py
-# and
-# https://github.com/MarshalX/bluesky-feed-generator/blob/main/server/data_stream.py
 class SpamError(Exception):
     pass
-nb_not_fr=0
-nb_block = 0
-nb_repost_fr=0
-from atproto import CAR, models, Client, client_utils, AtUri
 
 bsc = Client()
 bsc.login(handle, password)
 
 
 def worker_main(message_queue, mesure_queue, cursor,score):
-    global bsc
-
-
+    global bsc, password, handle
 
     last_step=time() - (id(multiprocessing.current_process().name) %120) + 60
     dbg(f'time={last_step}/')
     from atproto_firehose import FirehoseSubscribeReposClient, parse_subscribe_repos_message
 
     dbg("stated")
-    # SCORE
     con = sq.connect(dbname="trollo", user="jul")
     cur = con.cursor()
     evicted = set()
@@ -275,27 +268,27 @@ def worker_main(message_queue, mesure_queue, cursor,score):
     for l in cur.fetchall():
         evicted |= set(l)
 
-
     path_to_config= os.path.expanduser("~/.trollometre.vect.json")
 
     settings = load(open(path_to_config))
     training_set = vdict(settings["ham_spam"])
     blacklist = set(settings["blacklist"])
     while message := message_queue.get():
-        commit = parse_subscribe_repos_message(message)
-        if not isinstance(commit, models.ComAtprotoSyncSubscribeRepos.Commit):
-            continue
+        with lock_config:
+            commit = parse_subscribe_repos_message(message)
+            if not isinstance(commit, models.ComAtprotoSyncSubscribeRepos.Commit):
+                continue
 
-        if commit.seq % 20 == 0:
-            cursor.value = commit.seq
+            if commit.seq % 20 == 0:
+                cursor.value = commit.seq
 
-        if not commit.blocks:
-            continue
-        mesure = mdict()
-        if not isinstance(commit, models.ComAtprotoSyncSubscribeRepos.Commit):
-            debug("wtf")
-            return
+            if not commit.blocks:
+                continue
+            if not isinstance(commit, models.ComAtprotoSyncSubscribeRepos.Commit):
+                debug("wtf")
+                return
         car = CAR.from_bytes(commit.blocks)
+        mesure = mdict()
 
         for op in commit.ops:
             if op.action in ["create"] and op.cid:
@@ -314,11 +307,13 @@ def worker_main(message_queue, mesure_queue, cursor,score):
                             if uri not in evicted and cooked.py_type == "app.bsky.feed.repost":
                                 toprint = raw = bsc.get_posts([uri])
                                 post = raw = raw.posts[0]
-                                if "market" in raw["author"]["handle"] or "yuno-wov" in raw["author"]["handle"] or "vulve" in raw["author"]["handle"] or raw["author"]["handle"] in blacklist:
+                                # old hardcoded values. "market" in handle is still relevant
+                                if "market" in raw["author"]["handle"] \
+                                    or "yuno-wov" in raw["author"]["handle"] \
+                                        or "vulve" in raw["author"]["handle"] \
+                                            or raw["author"]["handle"] in blacklist:
                                     raise SpamError(f"spam in {raw['author'].handle}")
                                 scorer_fr[uri] = post.like_count+post.repost_count+post.quote_count+post.reply_count
-
-
                     except KeyError:
                         dbg(raw)
                         pass
@@ -332,7 +327,6 @@ def worker_main(message_queue, mesure_queue, cursor,score):
                     if "langs" in raw and not set(raw["langs"]) & {'fr',}:
                         mesure+=mdict(nb_not_fr=1)
                         continue
-
                     toprint=""
                     try:
                         uri = raw["reply"]["root"]["uri"]
@@ -341,10 +335,13 @@ def worker_main(message_queue, mesure_queue, cursor,score):
                             toprint = raw = bsc.get_posts([uri])
 
                         post = raw = raw.posts[0]
-                        if "market" in raw["author"]["handle"] or "yuno-wov" in raw["author"]["handle"] or "vulve" in raw["author"]["handle"] or raw["author"]["handle"] in blacklist:
+                        # repetition spotted ?
+                        if "market" in raw["author"]["handle"] \
+                            or "yuno-wov" in raw["author"]["handle"] \
+                                or "vulve" in raw["author"]["handle"] \
+                                    or raw["author"]["handle"] in blacklist:
                             raise SpamError(f"spam in {raw['author'].handle}")
 
-                        #from pdb import set_trace;set_trace()
                         if post.record.langs and set(post.record.langs) & {'fr',}:
                             mesure+=mdict(nb_fr=1)
                             dbg(".")
@@ -374,10 +371,6 @@ def worker_main(message_queue, mesure_queue, cursor,score):
         if time() - last_step > 120:
             dbg("pick")
             last_step = time()
-
-            #dbg(nb_fr+nb_repost_fr)
-            #with open(os.path.expanduser("~/trollometre.csv"), "a") as f:
-            #    f.write(f"{int(time())},{nb_fr},{nb_not_fr},{nb_spam},{nb_block},{nb_repost_fr}\n")
             nb_fr=0
             nb_spam=0
             nb_block=0
@@ -395,16 +388,13 @@ def worker_main(message_queue, mesure_queue, cursor,score):
 
                 for p in sorted({ k:v for k, v in mydict.items() if k not in evicted }.items(),
                     key=lambda x : x[1] )[::-1][0:1]:
-## SCORE
-                    if mydict[p[0]]<score.value:
+                    ## SCORE
+                    if mydict[p[0]] < score.value:
 
                         picked = True
                         break
-
-
                     dbg(p)
                     try:
-
                         raw = bsc.get_posts([p[0]])
                         _,_,did,collection, rkey = p[0].split("/")
                         url = f"https://bsky.app/profile/{did}/post/{rkey}"
@@ -419,21 +409,23 @@ def worker_main(message_queue, mesure_queue, cursor,score):
                         #dbg(dumps(loads(raw.posts[0].json()),indent=4))
                         try:
                             cur.execute("INSERT INTO posts (uri, url, post, score, maybe_spam) VALUES(%s, %s, %s, %s, %s)",
-                                [ p[0], url, json, post.like_count+post.repost_count+post.quote_count+post.reply_count, maybe_spam])
+                                [
+                                    p[0],
+                                    url,
+                                    json,
+                                    post.like_count+post.repost_count+post.quote_count+post.reply_count,
+                                    maybe_spam
+                                ])
                         except:
                             con.rollback()
                         finally:
                             con.commit()
                         q.put(json)
-
-
                         if maybe_spam == False:
                             picked = True
                             dbg("before send")
-                            #send_post(get_root_refs(p[0], f"[BOT] le niveau d'agitation ici est de : {p[1]}"))
                             repost_root_refs(bsc,p[0])
                             dbg("sent")
-
                     except KeyError:
                         dbg("invalid post")
                         dbg(raw)
@@ -447,7 +439,6 @@ def worker_main(message_queue, mesure_queue, cursor,score):
                             dbg(e)
 
 
-import asyncio
 def websocket_server(q):
     async def echo(websocket):
         while message:=q.get():
@@ -481,25 +472,25 @@ def mesure_collector(mesure_queue):
         all_mesure += mdict(mesure)
 
 
-
-
+### multiprocessing part !
 
 mesure_queue = multiprocessing.Queue()
-
 
 p = Process(target=websocket_server, args =(q,))
 p.start()
 
 
-workers_count = 5 # multiprocessing.cpu_count() * 2 - 1
+workers_count= multiprocessing.cpu_count()
 print(f"{workers_count} process started")
 message_queue = multiprocessing.Queue(maxsize=1000)
 start_cursor = None
 params = None
 cursor = multiprocessing.Value('i', 0)
+
 if start_cursor is not None:
     cursor = multiprocessing.Value('i', start_cursor)
     params = get_firehose_params(cursor)
+
 
 
 def score_setter(score):
