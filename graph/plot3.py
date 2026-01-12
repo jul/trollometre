@@ -9,13 +9,13 @@ plt.style.use('tableau-colorblind10')
 fig = plt.figure()
 ax = fig.add_subplot(111)
 
-#input_file = os.path.expanduser("~/trolloscore.csv")
-#data = pd.read_csv(input_file,names=['timestamp', 'todel', 'total'], usecols=range(3),header=None)
-input_file = "this"
-data = pd.read_csv(input_file,names=['timestamp', 'total'], header=None)
+input_file = os.path.expanduser("~/trollometre.csv")
+data = pd.read_csv(input_file,names=['timestamp', '_', 'total'], usecols=range(3),header=None)
+#input_file = "this"
+#data = pd.read_csv(input_file,names=['timestamp', 'total'], header=None)
 
 
-data = data[data.timestamp > int(time()) - 4 * 24 * 3600  ]
+data = data[data.timestamp > int(time()) - 30 * 24 * 3600  ]
 
 
 time = data["timestamp"].apply(dt.datetime.fromtimestamp)

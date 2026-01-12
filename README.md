@@ -1,3 +1,21 @@
+# Chantiers à venir pour rendre le bot plus respectueux des diversités
+
+
+- modification du code pour rechercher des informations supplémentaires sur 
+les posteurs (profil)
+- rajouter pour les posts et les profils la possibilité de rajouter des 
+étiquettes/annotations nécessaires *quelque soit la méthode (bayésienne, ML,
+fréquentielle)* pour faire de l'apprentissage
+- documenter/publier des graphs
+- ajouter dans le README tout en haut le changement de finalité du bot : non plus reposter, mais étudier l'inégalité d'accès aux tribunes publiques, et déterminer les variables d'influences ;
+- changer le nom du projet un peu trollesque pour refléter le changement de finalité (ça j'ai pas d'idée)
+- c'est con, mais il me semble (expérience) qu'il faut aussi étudier les conséquences de l'exposition par le bot (blocage du bot, exposés harcelés …) en fonction des variables d'influences qui seront éventuellement déterminées
+
+
+
+
+
+
 # Que fait le trollomètre ?
 
 Le trollomètre est un bot qui emplit sa chronologie de tout les posts qui

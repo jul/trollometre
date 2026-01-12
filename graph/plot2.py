@@ -10,11 +10,12 @@ plt.style.use('tableau-colorblind10')
 fig = plt.figure()
 ax = fig.add_subplot(111)
 
+nb_day = 40
 con = sq.connect(dbname="trollo", user="jul")
 cur = con.cursor()
-res = cur.execute("""
+res = cur.execute(f"""
     with 
-        date as  (select * from generate_series(NOW()-interval '15d', NOW() , interval '20m') as d)
+        date as  (select * from generate_series(NOW()-interval '{nb_day}d', NOW() , interval '20m') as d)
     select
         date.d as timestamp,
         percentile_cont(0.) WITHIN GROUP ( order by score) as min,
@@ -35,7 +36,6 @@ input_file = os.path.expanduser("~/trolloscore.csv")
 data = pd.read_csv(input_file,names=['timestamp', 'score', 'cumul'], header=None)
 #data = pd.read_csv(input_file,names=['timestamp', 'posts'])
 
-nb_day = 10
 data = data[data.timestamp > int(time()) - nb_day * 24 * 3600  ]
 time2 = data2.timestamp.apply(lambda e : e.timestamp() )
 data2 = data2[time2 > int(time()) - nb_day * 24 * 3600  ]
@@ -48,7 +48,7 @@ ax.plot(data2.timestamp, data2["median"], label = [ "score median observé sur 2
 ax.plot(data2.timestamp, data2["average"], label = [ "score moyen observé sur 24h"])
 from time import time
 plt.axhline( 105, color= "green")
-plt.axhline( 115, color="green")
+plt.axhline( 115, color= "green")
 #plt.axline([time2[0], 115], [time2[2], 115])
 #ax.plot(time[1:], (data["repost"]/delta)[1:],label=['repost',], linewidth=.75 , )
 #ax.xaxis.set_major_formatter(mdates.DateFormatter('%a'))
