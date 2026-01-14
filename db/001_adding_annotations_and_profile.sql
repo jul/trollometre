@@ -5,4 +5,5 @@ CREATE TABLE profile (
     annotation text[],
     created_at TIMESTAMP DEFAULT NOW()
 );
+GRANT ALL on profile to jul;
 
